@@ -1,8 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { signInWithEmailAndPassword } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 import React, { useState } from 'react';
 import {
+    ActivityIndicator,
     Alert,
     KeyboardAvoidingView,
     Platform,
@@ -11,10 +13,10 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View
+    View,
 } from 'react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
-import { auth } from '../constants/firebase/config';
+import { auth, db } from '../firebaseConfig';
 
 export default function LoginScreen() {
     const [email, setEmail] = useState('');
@@ -22,6 +24,7 @@ export default function LoginScreen() {
     const [isEmailFocused, setIsEmailFocused] = useState(false);
     const [isPasswordFocused, setIsPasswordFocused] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
+    const [loading, setLoading] = useState(false);
 
     const handleLogin = async () => {
         if (!email || !password) {
@@ -29,19 +32,28 @@ export default function LoginScreen() {
             return;
         }
 
+        setLoading(true);
         try {
-            await signInWithEmailAndPassword(
-                auth,
-                email,
-                password
-            );
+            const { user } = await signInWithEmailAndPassword(auth, email, password);
 
-            Alert.alert('Success', 'Login Successful');
+            const userDoc = await getDoc(doc(db, 'users', user.uid));
+            const onboardingComplete = userDoc.data()?.onboardingComplete ?? false;
 
-            router.push('/onboarding');
-
+            if (onboardingComplete) {
+                router.replace('/(tabs)/home');
+            } else {
+                router.replace('/onboarding');
+            }
         } catch (error: any) {
-            Alert.alert('Login Failed', error.message);
+            const msg =
+                error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password'
+                    ? 'Invalid email or password.'
+                    : error.code === 'auth/too-many-requests'
+                    ? 'Too many attempts. Please try again later.'
+                    : error.message || 'Login failed. Please try again.';
+            Alert.alert('Login Failed', msg);
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -71,7 +83,7 @@ export default function LoginScreen() {
                     style={styles.formContainer}
                 >
                     <View style={[styles.inputContainer, isEmailFocused && styles.inputFocused]}>
-                        <Ionicons name="mail-outline" size={20} color={isEmailFocused ? "#3A86FF" : "#6C7A9C"} style={styles.inputIcon} />
+                        <Ionicons name="mail-outline" size={20} color={isEmailFocused ? '#3A86FF' : '#6C7A9C'} style={styles.inputIcon} />
                         <TextInput
                             placeholder="Email Address"
                             placeholderTextColor="#6C7A9C"
@@ -86,7 +98,7 @@ export default function LoginScreen() {
                     </View>
 
                     <View style={[styles.inputContainer, isPasswordFocused && styles.inputFocused]}>
-                        <Ionicons name="lock-closed-outline" size={20} color={isPasswordFocused ? "#3A86FF" : "#6C7A9C"} style={styles.inputIcon} />
+                        <Ionicons name="lock-closed-outline" size={20} color={isPasswordFocused ? '#3A86FF' : '#6C7A9C'} style={styles.inputIcon} />
                         <TextInput
                             placeholder="Password"
                             placeholderTextColor="#6C7A9C"
@@ -97,15 +109,8 @@ export default function LoginScreen() {
                             onFocus={() => setIsPasswordFocused(true)}
                             onBlur={() => setIsPasswordFocused(false)}
                         />
-                        <TouchableOpacity
-                            onPress={() => setShowPassword(!showPassword)}
-                            style={styles.eyeIcon}
-                        >
-                            <Ionicons
-                                name={showPassword ? "eye-off-outline" : "eye-outline"}
-                                size={20}
-                                color="#6C7A9C"
-                            />
+                        <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
+                            <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color="#6C7A9C" />
                         </TouchableOpacity>
                     </View>
 
@@ -114,11 +119,16 @@ export default function LoginScreen() {
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                        style={styles.button}
+                        style={[styles.button, loading && styles.buttonDisabled]}
                         onPress={handleLogin}
+                        disabled={loading}
                         activeOpacity={0.8}
                     >
-                        <Text style={styles.buttonText}>Login</Text>
+                        {loading ? (
+                            <ActivityIndicator color="#fff" />
+                        ) : (
+                            <Text style={styles.buttonText}>Login</Text>
+                        )}
                     </TouchableOpacity>
 
                     <View style={styles.registerContainer}>
@@ -216,13 +226,13 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
         shadowColor: '#3A86FF',
-        shadowOffset: {
-            width: 0,
-            height: 4,
-        },
+        shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
         elevation: 8,
+    },
+    buttonDisabled: {
+        opacity: 0.6,
     },
     buttonText: {
         color: '#FFFFFF',
