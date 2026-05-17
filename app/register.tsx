@@ -1,24 +1,35 @@
 import { router } from 'expo-router';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
 import React, { useState } from 'react';
 import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { auth } from '../constants/firebase/config';
 
 export default function RegisterScreen() {
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
 
-    const handleRegister = () => {
+    const handleRegister = async () => {
+        console.log("REGISTER CLICKED");
         if (!name || !email || !password) {
             Alert.alert('Error', 'Please fill all fields');
             return;
         }
 
-        // Temporary registration logic
-        // Firebase auth will be added later
+        try {
+            await createUserWithEmailAndPassword(
+                auth,
+                email,
+                password
+            );
 
-        Alert.alert('Success', 'Registration Successful');
+            Alert.alert('Success', 'Registration Successful');
 
-        router.push('/login');
+            router.push('/login');
+
+        } catch (error: any) {
+            Alert.alert('Registration Failed', error.message);
+        }
     };
 
     return (
