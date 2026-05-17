@@ -150,7 +150,7 @@ export default function ProfileScreen() {
 
                 <TouchableOpacity
                     style={styles.settingsRow}
-                    onPress={() => router.push('/(tabs)/alerts')}
+                    onPress={() => router.push('/(tabs)/alerts' as any)}
                     activeOpacity={0.8}
                 >
                     <Text style={styles.settingsIcon}>🔔</Text>

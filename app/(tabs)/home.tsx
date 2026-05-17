@@ -60,7 +60,7 @@ function ReportCard({ item }: { item: Report }) {
         <TouchableOpacity
             style={styles.card}
             activeOpacity={0.88}
-            onPress={() => router.push({ pathname: '/report/[id]', params: { id: item.reportId } })}
+            onPress={() => router.push({ pathname: '/report/[id]', params: { id: item.reportId } } as any)}
         >
             {/* Image */}
             <Image
@@ -159,7 +159,7 @@ export default function HomeScreen() {
                 <View style={styles.headerActions}>
                     <TouchableOpacity
                         style={styles.headerBtn}
-                        onPress={() => router.push('/(tabs)/alerts')}
+                        onPress={() => router.push('/(tabs)/alerts' as any)}
                     >
                         <Text style={styles.headerBtnIcon}>🔔</Text>
                     </TouchableOpacity>
@@ -184,7 +184,7 @@ export default function HomeScreen() {
                     </Text>
                     <TouchableOpacity
                         style={styles.reportCta}
-                        onPress={() => router.push('/(tabs)/report')}
+                        onPress={() => router.push('/(tabs)/report' as any)}
                     >
                         <Text style={styles.reportCtaText}>Create Report</Text>
                     </TouchableOpacity>

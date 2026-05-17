@@ -1,10 +1,4 @@
 import { router } from 'expo-router';
-<<<<<<< HEAD
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import React, { useState } from 'react';
-import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { auth } from '../constants/firebase/config';
-=======
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import React, { useState } from 'react';
 import {
@@ -19,8 +13,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { auth, initProfileFn } from '../firebaseConfig';
->>>>>>> 7a80fb7 (frontend almost done)
+import { auth } from '../constants/firebase/config';
 
 export default function RegisterScreen() {
     const [name, setName] = useState('');
@@ -29,10 +22,7 @@ export default function RegisterScreen() {
     const [loading, setLoading] = useState(false);
 
     const handleRegister = async () => {
-<<<<<<< HEAD
-        console.log("REGISTER CLICKED");
-=======
->>>>>>> 7a80fb7 (frontend almost done)
+
         if (!name || !email || !password) {
             Alert.alert('Error', 'Please fill all fields');
             return;
@@ -42,21 +32,6 @@ export default function RegisterScreen() {
             return;
         }
 
-<<<<<<< HEAD
-        try {
-            await createUserWithEmailAndPassword(
-                auth,
-                email,
-                password
-            );
-
-            Alert.alert('Success', 'Registration Successful');
-
-            router.push('/login');
-
-        } catch (error: any) {
-            Alert.alert('Registration Failed', error.message);
-=======
         setLoading(true);
         try {
             // 1. Create Firebase Auth user
@@ -65,11 +40,7 @@ export default function RegisterScreen() {
             // 2. Set display name
             await updateProfile(user, { displayName: name });
 
-            // 3. Initialize Firestore profile via Cloud Function
-            const initProfile = initProfileFn();
-            await initProfile();
-
-            // 4. Navigate to onboarding
+            // 3. Navigate to onboarding
             router.replace('/onboarding');
         } catch (error: any) {
             const msg =
@@ -81,7 +52,6 @@ export default function RegisterScreen() {
             Alert.alert('Registration Failed', msg);
         } finally {
             setLoading(false);
->>>>>>> 7a80fb7 (frontend almost done)
         }
     };
 
