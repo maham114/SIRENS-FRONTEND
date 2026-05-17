@@ -1,330 +1,208 @@
-import React, { useState } from 'react';
+import * as ImagePicker from 'expo-image-picker';
+import React, { useMemo, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
+    Image,
+    KeyboardAvoidingView,
+    Platform,
     ScrollView,
     StyleSheet,
-    Switch,
     Text,
+    TextInput,
     TouchableOpacity,
     View,
 } from 'react-native';
-import { setAlertPrefsFn } from '../../firebaseConfig';
+import { useReportStore } from '@/stores/reportStore';
+import type { ReportCategory } from '@/types/tabs';
 
-type Channel = 'push' | 'email' | 'sms';
-
-type Prefs = {
-    weather: boolean;
-    traffic: boolean;
-    highSeverityOnly: boolean;
-    notificationChannel: Channel;
-};
-
-const CHANNELS: { key: Channel; icon: string; label: string; desc: string }[] = [
-    { key: 'push',  icon: '📲', label: 'Push Notification', desc: 'Instant alerts on your device' },
-    { key: 'email', icon: '✉️', label: 'Email',             desc: 'Alerts sent to your inbox' },
-    { key: 'sms',   icon: '💬', label: 'SMS',               desc: 'Text message alerts' },
+const CATEGORIES: { key: ReportCategory; label: string; hint: string }[] = [
+    { key: 'accident', label: 'Accident', hint: 'Road collision or injury' },
+    { key: 'fire', label: 'Fire', hint: 'Smoke, flames, hazard' },
+    { key: 'weather', label: 'Weather', hint: 'Flood, storm, heat' },
+    { key: 'traffic', label: 'Traffic', hint: 'Blocked route or jam' },
+    { key: 'other', label: 'Other', hint: 'Anything urgent' },
 ];
 
-function ToggleRow({
-    icon,
-    label,
-    subtitle,
-    value,
-    onValueChange,
-}: {
-    icon: string;
-    label: string;
-    subtitle?: string;
-    value: boolean;
-    onValueChange: (v: boolean) => void;
-}) {
-    return (
-        <View style={styles.toggleRow}>
-            <View style={styles.toggleLeft}>
-                <Text style={styles.toggleIcon}>{icon}</Text>
-                <View>
-                    <Text style={styles.toggleLabel}>{label}</Text>
-                    {subtitle ? <Text style={styles.toggleSubtitle}>{subtitle}</Text> : null}
-                </View>
-            </View>
-            <Switch
-                value={value}
-                onValueChange={onValueChange}
-                trackColor={{ false: '#1E2D50', true: '#3A86FF' }}
-                thumbColor={value ? '#FFFFFF' : '#8892A4'}
-                ios_backgroundColor="#1E2D50"
-            />
-        </View>
-    );
-}
+export default function ReportScreen() {
+    const {
+        draft,
+        stage,
+        progress,
+        error,
+        submitting,
+        setCategory,
+        setField,
+        setImage,
+        reset,
+        submit,
+    } = useReportStore();
+    const [picking, setPicking] = useState(false);
 
-export default function AlertsScreen() {
-    const [prefs, setPrefs] = useState<Prefs>({
-        weather: true,
-        traffic: true,
-        highSeverityOnly: false,
-        notificationChannel: 'push',
-    });
-    const [saving, setSaving] = useState(false);
-    const [saved, setSaved] = useState(false);
+    const progressText = useMemo(() => {
+        if (stage === 'uploading') return `Uploading photo ${Math.round(progress * 100)}%`;
+        if (stage === 'submitting') return 'Submitting report...';
+        return null;
+    }, [progress, stage]);
 
-    const handleSave = async () => {
-        setSaving(true);
-        setSaved(false);
+    const handlePickImage = async () => {
+        setPicking(true);
         try {
-            const setPrefsCall = setAlertPrefsFn();
-            await setPrefsCall({ preferences: prefs });
-            setSaved(true);
-            setTimeout(() => setSaved(false), 2500);
-        } catch (error: any) {
-            Alert.alert('Error', error.message || 'Could not save preferences.');
+            const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (!permission.granted) {
+                Alert.alert('Permission Required', 'Allow photo access to attach report evidence.');
+                return;
+            }
+
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsEditing: true,
+                quality: 0.82,
+            });
+
+            if (result.canceled || !result.assets[0]) return;
+            const asset = result.assets[0];
+            setImage({
+                uri: asset.uri,
+                mimeType: asset.mimeType,
+                fileName: asset.fileName ?? `report-${Date.now()}.jpg`,
+            });
+        } catch (pickError: any) {
+            Alert.alert('Photo Error', pickError.message || 'Could not select photo.');
         } finally {
-            setSaving(false);
+            setPicking(false);
+        }
+    };
+
+    const handleSubmit = async () => {
+        const success = await submit();
+        if (success) {
+            Alert.alert('Report Submitted', 'Thanks. Your report has been sent for processing.');
         }
     };
 
     return (
-        <ScrollView contentContainerStyle={styles.container}>
-            {/* Header */}
-            <View style={styles.header}>
-                <Text style={styles.title}>Alert Preferences</Text>
-                <Text style={styles.subtitle}>Control which alerts you receive and how</Text>
-            </View>
+        <KeyboardAvoidingView
+            style={styles.root}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+            <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+                <View style={styles.header}>
+                    <Text style={styles.title}>Create Report</Text>
+                    <Text style={styles.subtitle}>Share a verified incident with your community</Text>
+                </View>
 
-            {/* Alert Types */}
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>ALERT TYPES</Text>
+                <View style={styles.card}>
+                    <Text style={styles.cardTitle}>REPORT TYPE</Text>
+                    <View style={styles.categoryGrid}>
+                        {CATEGORIES.map((category) => {
+                            const active = draft.category === category.key;
+                            return (
+                                <TouchableOpacity
+                                    key={category.key}
+                                    style={[styles.categoryButton, active && styles.categoryButtonActive]}
+                                    onPress={() => setCategory(category.key)}
+                                    activeOpacity={0.85}
+                                >
+                                    <Text style={[styles.categoryLabel, active && styles.categoryLabelActive]}>{category.label}</Text>
+                                    <Text style={styles.categoryHint}>{category.hint}</Text>
+                                </TouchableOpacity>
+                            );
+                        })}
+                    </View>
+                </View>
 
-                <ToggleRow
-                    icon="⛈️"
-                    label="Weather Alerts"
-                    subtitle="Storms, floods, extreme conditions"
-                    value={prefs.weather}
-                    onValueChange={(v) => setPrefs((p) => ({ ...p, weather: v }))}
-                />
-                <View style={styles.divider} />
-                <ToggleRow
-                    icon="🚦"
-                    label="Traffic Alerts"
-                    subtitle="Congestion, road closures, accidents"
-                    value={prefs.traffic}
-                    onValueChange={(v) => setPrefs((p) => ({ ...p, traffic: v }))}
-                />
-                <View style={styles.divider} />
-                <ToggleRow
-                    icon="🔴"
-                    label="High Severity Only"
-                    subtitle="Only receive critical emergency alerts"
-                    value={prefs.highSeverityOnly}
-                    onValueChange={(v) => setPrefs((p) => ({ ...p, highSeverityOnly: v }))}
-                />
-            </View>
-
-            {/* Notification Channel */}
-            <View style={styles.card}>
-                <Text style={styles.cardTitle}>NOTIFICATION CHANNEL</Text>
-                <Text style={styles.cardSubtitle}>Choose how you receive alerts</Text>
-
-                {CHANNELS.map((ch, idx) => (
-                    <TouchableOpacity
-                        key={ch.key}
-                        style={[
-                            styles.channelRow,
-                            prefs.notificationChannel === ch.key && styles.channelRowActive,
-                            idx > 0 && { marginTop: 10 },
-                        ]}
-                        onPress={() => setPrefs((p) => ({ ...p, notificationChannel: ch.key }))}
-                        activeOpacity={0.8}
-                    >
-                        <Text style={styles.channelIcon}>{ch.icon}</Text>
-                        <View style={styles.channelText}>
-                            <Text
-                                style={[
-                                    styles.channelLabel,
-                                    prefs.notificationChannel === ch.key && styles.channelLabelActive,
-                                ]}
-                            >
-                                {ch.label}
-                            </Text>
-                            <Text style={styles.channelDesc}>{ch.desc}</Text>
+                <View style={styles.card}>
+                    <Text style={styles.cardTitle}>PHOTO</Text>
+                    {draft.imageUri ? (
+                        <Image source={{ uri: draft.imageUri }} style={styles.preview} />
+                    ) : (
+                        <View style={styles.photoEmpty}>
+                            <Text style={styles.photoEmptyText}>No photo selected</Text>
                         </View>
-                        <View
-                            style={[
-                                styles.radio,
-                                prefs.notificationChannel === ch.key && styles.radioActive,
-                            ]}
-                        >
-                            {prefs.notificationChannel === ch.key && (
-                                <View style={styles.radioDot} />
-                            )}
-                        </View>
+                    )}
+                    <TouchableOpacity style={styles.secondaryButton} onPress={handlePickImage} disabled={picking || submitting}>
+                        {picking ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.secondaryButtonText}>{draft.imageUri ? 'Change Photo' : 'Add Photo'}</Text>}
                     </TouchableOpacity>
-                ))}
-            </View>
+                </View>
 
-            {/* Save */}
-            <TouchableOpacity
-                style={[styles.saveBtn, (saving || saved) && styles.saveBtnActive]}
-                onPress={handleSave}
-                disabled={saving}
-                activeOpacity={0.85}
-            >
-                {saving ? (
-                    <ActivityIndicator color="#fff" />
-                ) : saved ? (
-                    <Text style={styles.saveBtnText}>✅ Preferences Saved!</Text>
-                ) : (
-                    <Text style={styles.saveBtnText}>Save Preferences</Text>
-                )}
-            </TouchableOpacity>
-        </ScrollView>
+                <View style={styles.card}>
+                    <Text style={styles.cardTitle}>LOCATION</Text>
+                    <TextInput
+                        style={styles.input}
+                        placeholder="City"
+                        placeholderTextColor="#4A5568"
+                        value={draft.city}
+                        onChangeText={(value) => setField('city', value)}
+                    />
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Area name"
+                        placeholderTextColor="#4A5568"
+                        value={draft.areaName}
+                        onChangeText={(value) => setField('areaName', value)}
+                    />
+                </View>
+
+                <View style={styles.card}>
+                    <Text style={styles.cardTitle}>DETAILS</Text>
+                    <TextInput
+                        style={[styles.input, styles.textArea]}
+                        placeholder="What happened?"
+                        placeholderTextColor="#4A5568"
+                        value={draft.description}
+                        onChangeText={(value) => setField('description', value)}
+                        multiline
+                        textAlignVertical="top"
+                    />
+                </View>
+
+                {error ? <Text style={styles.errorText}>{error}</Text> : null}
+                {progressText ? <Text style={styles.progressText}>{progressText}</Text> : null}
+
+                <TouchableOpacity
+                    style={[styles.submitButton, submitting && styles.submitButtonDisabled]}
+                    onPress={handleSubmit}
+                    disabled={submitting}
+                    activeOpacity={0.85}
+                >
+                    {submitting ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.submitButtonText}>Submit Report</Text>}
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.resetButton} onPress={reset} disabled={submitting}>
+                    <Text style={styles.resetButtonText}>Clear Form</Text>
+                </TouchableOpacity>
+            </ScrollView>
+        </KeyboardAvoidingView>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flexGrow: 1,
-        backgroundColor: '#0B132B',
-        padding: 20,
-        paddingTop: 60,
-        paddingBottom: 100,
-    },
-    header: {
-        marginBottom: 28,
-    },
-    title: {
-        fontSize: 28,
-        fontWeight: '800',
-        color: '#FFFFFF',
-        marginBottom: 4,
-    },
-    subtitle: {
-        fontSize: 14,
-        color: '#8892A4',
-    },
-    card: {
-        backgroundColor: '#141D35',
-        borderRadius: 16,
-        padding: 18,
-        marginBottom: 16,
-        borderWidth: 1,
-        borderColor: '#1E2D50',
-    },
-    cardTitle: {
-        fontSize: 11,
-        fontWeight: '700',
-        color: '#3A86FF',
-        letterSpacing: 2,
-        marginBottom: 16,
-    },
-    cardSubtitle: {
-        fontSize: 13,
-        color: '#8892A4',
-        marginBottom: 14,
-        marginTop: -10,
-    },
-    divider: {
-        height: 1,
-        backgroundColor: '#1E2D50',
-        marginVertical: 12,
-    },
-    toggleRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-    },
-    toggleLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-        flex: 1,
-    },
-    toggleIcon: {
-        fontSize: 22,
-        width: 30,
-        textAlign: 'center',
-    },
-    toggleLabel: {
-        fontSize: 15,
-        fontWeight: '600',
-        color: '#FFFFFF',
-        marginBottom: 2,
-    },
-    toggleSubtitle: {
-        fontSize: 12,
-        color: '#8892A4',
-    },
-    channelRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 14,
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: '#1E2D50',
-        gap: 12,
-    },
-    channelRowActive: {
-        borderColor: '#3A86FF',
-        backgroundColor: 'rgba(58,134,255,0.08)',
-    },
-    channelIcon: {
-        fontSize: 22,
-        width: 30,
-        textAlign: 'center',
-    },
-    channelText: {
-        flex: 1,
-    },
-    channelLabel: {
-        fontSize: 15,
-        fontWeight: '600',
-        color: '#8892A4',
-        marginBottom: 2,
-    },
-    channelLabelActive: {
-        color: '#FFFFFF',
-    },
-    channelDesc: {
-        fontSize: 12,
-        color: '#4A5568',
-    },
-    radio: {
-        width: 20,
-        height: 20,
-        borderRadius: 10,
-        borderWidth: 2,
-        borderColor: '#4A5568',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    radioActive: {
-        borderColor: '#3A86FF',
-    },
-    radioDot: {
-        width: 10,
-        height: 10,
-        borderRadius: 5,
-        backgroundColor: '#3A86FF',
-    },
-    saveBtn: {
-        backgroundColor: '#3A86FF',
-        padding: 18,
-        borderRadius: 14,
-        alignItems: 'center',
-        marginTop: 8,
-        shadowColor: '#3A86FF',
-        shadowOpacity: 0.4,
-        shadowRadius: 12,
-        shadowOffset: { width: 0, height: 4 },
-        elevation: 6,
-    },
-    saveBtnActive: {
-        backgroundColor: '#2563EB',
-    },
-    saveBtnText: {
-        color: '#FFFFFF',
-        fontSize: 16,
-        fontWeight: '700',
-    },
+    root: { flex: 1, backgroundColor: '#0B132B' },
+    container: { flexGrow: 1, backgroundColor: '#0B132B', padding: 20, paddingTop: 60, paddingBottom: 110 },
+    header: { marginBottom: 28 },
+    title: { fontSize: 28, fontWeight: '800', color: '#FFFFFF', marginBottom: 4 },
+    subtitle: { fontSize: 14, color: '#8892A4' },
+    card: { backgroundColor: '#141D35', borderRadius: 16, padding: 18, marginBottom: 16, borderWidth: 1, borderColor: '#1E2D50' },
+    cardTitle: { fontSize: 11, fontWeight: '700', color: '#3A86FF', letterSpacing: 2, marginBottom: 16 },
+    categoryGrid: { gap: 10 },
+    categoryButton: { borderRadius: 12, borderWidth: 1, borderColor: '#1E2D50', padding: 14, backgroundColor: '#0D1526' },
+    categoryButtonActive: { borderColor: '#3A86FF', backgroundColor: 'rgba(58, 134, 255, 0.12)' },
+    categoryLabel: { color: '#8892A4', fontSize: 15, fontWeight: '800', marginBottom: 3 },
+    categoryLabelActive: { color: '#FFFFFF' },
+    categoryHint: { color: '#4A5568', fontSize: 12 },
+    preview: { width: '100%', height: 210, borderRadius: 12, backgroundColor: '#0D1526', marginBottom: 12 },
+    photoEmpty: { height: 150, borderRadius: 12, borderWidth: 1, borderColor: '#1E2D50', backgroundColor: '#0D1526', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+    photoEmptyText: { color: '#4A5568', fontWeight: '700' },
+    secondaryButton: { backgroundColor: 'rgba(58, 134, 255, 0.2)', borderWidth: 1, borderColor: '#3A86FF', borderRadius: 12, padding: 14, alignItems: 'center' },
+    secondaryButtonText: { color: '#FFFFFF', fontWeight: '800' },
+    input: { backgroundColor: '#0D1526', borderWidth: 1.5, borderColor: '#1A2540', borderRadius: 12, padding: 16, color: '#FFFFFF', fontSize: 16, marginBottom: 12 },
+    textArea: { minHeight: 130, lineHeight: 22 },
+    errorText: { color: '#FFB4B4', textAlign: 'center', marginBottom: 12 },
+    progressText: { color: '#8A9BAE', textAlign: 'center', marginBottom: 12 },
+    submitButton: { backgroundColor: '#3A86FF', borderRadius: 14, height: 56, justifyContent: 'center', alignItems: 'center', shadowColor: '#3A86FF', shadowOpacity: 0.35, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 8 },
+    submitButtonDisabled: { opacity: 0.65 },
+    submitButtonText: { color: '#FFFFFF', fontSize: 17, fontWeight: '800' },
+    resetButton: { padding: 16, alignItems: 'center' },
+    resetButtonText: { color: '#8892A4', fontWeight: '700' },
 });

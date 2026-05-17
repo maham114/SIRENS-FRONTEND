@@ -1,5 +1,5 @@
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import React, { useState } from 'react';
 import {
     ActivityIndicator,
@@ -13,43 +13,48 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { auth } from '../constants/firebase/config';
+import { registerWithEmail } from '@/services/authService';
 
 export default function RegisterScreen() {
-    const [name, setName] = useState('');
-    const [email, setEmail] = useState('');
+    const [email, setEmail]       = useState('');
     const [password, setPassword] = useState('');
-    const [loading, setLoading] = useState(false);
+    const [confirm, setConfirm]   = useState('');
+    const [loading, setLoading]   = useState(false);
+    const [showPass, setShowPass] = useState(false);
 
-    const handleRegister = async () => {
-
-        if (!name || !email || !password) {
-            Alert.alert('Error', 'Please fill all fields');
-            return;
+    const validate = (): boolean => {
+        if (!email.trim()) {
+            Alert.alert('Required', 'Please enter your email.'); return false;
+        }
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email.trim())) {
+            Alert.alert('Invalid', 'Please enter a valid email address.'); return false;
         }
         if (password.length < 6) {
-            Alert.alert('Error', 'Password must be at least 6 characters');
-            return;
+            Alert.alert('Weak password', 'Password must be at least 6 characters.'); return false;
         }
+        if (password !== confirm) {
+            Alert.alert('Mismatch', 'Passwords do not match.'); return false;
+        }
+        return true;
+    };
 
+    const handleRegister = async () => {
+        if (!validate()) return;
         setLoading(true);
+
         try {
-            // 1. Create Firebase Auth user
-            const { user } = await createUserWithEmailAndPassword(auth, email, password);
-
-            // 2. Set display name
-            await updateProfile(user, { displayName: name });
-
-            // 3. Navigate to onboarding
-            router.replace('/onboarding');
+            await registerWithEmail(email, password);
         } catch (error: any) {
-            const msg =
+            const message =
                 error.code === 'auth/email-already-in-use'
-                    ? 'This email is already registered.'
+                    ? 'An account with this email already exists.'
                     : error.code === 'auth/invalid-email'
-                    ? 'Please enter a valid email address.'
-                    : error.message || 'Registration failed. Please try again.';
-            Alert.alert('Registration Failed', msg);
+                    ? 'Invalid email address.'
+                    : error.code === 'auth/weak-password'
+                    ? 'Password is too weak.'
+                    : error.message;
+            Alert.alert('Registration failed', message);
         } finally {
             setLoading(false);
         }
@@ -57,174 +62,101 @@ export default function RegisterScreen() {
 
     return (
         <KeyboardAvoidingView
-            style={{ flex: 1 }}
+            style={styles.container}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-            <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-                {/* Header */}
-                <View style={styles.header}>
-                    <View style={styles.logoRing}>
-                        <Text style={styles.logoIcon}>🚨</Text>
-                    </View>
-                    <Text style={styles.title}>Create Account</Text>
-                    <Text style={styles.subtitle}>Join SIRENS Emergency System</Text>
-                </View>
+            <ScrollView
+                contentContainerStyle={styles.scroll}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+            >
+                <Text style={styles.title}>Create Account</Text>
+                <Text style={styles.subtitle}>Join SIRENS to stay informed and safe</Text>
 
-                {/* Form */}
-                <View style={styles.form}>
-                    <View style={styles.fieldGroup}>
-                        <Text style={styles.label}>FULL NAME</Text>
-                        <TextInput
-                            placeholder="Enter your full name"
-                            placeholderTextColor="#4A5568"
-                            style={styles.input}
-                            value={name}
-                            onChangeText={setName}
-                            autoCapitalize="words"
-                        />
-                    </View>
+                <Text style={styles.label}>Email</Text>
+                <TextInput
+                    style={styles.input}
+                    placeholder="you@example.com"
+                    placeholderTextColor="#4A5568"
+                    value={email}
+                    onChangeText={setEmail}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    autoComplete="email"
+                />
 
-                    <View style={styles.fieldGroup}>
-                        <Text style={styles.label}>EMAIL</Text>
-                        <TextInput
-                            placeholder="Enter your email"
-                            placeholderTextColor="#4A5568"
-                            style={styles.input}
-                            value={email}
-                            onChangeText={setEmail}
-                            keyboardType="email-address"
-                            autoCapitalize="none"
-                        />
-                    </View>
-
-                    <View style={styles.fieldGroup}>
-                        <Text style={styles.label}>PASSWORD</Text>
-                        <TextInput
-                            placeholder="Min. 6 characters"
-                            placeholderTextColor="#4A5568"
-                            style={styles.input}
-                            value={password}
-                            onChangeText={setPassword}
-                            secureTextEntry
-                        />
-                    </View>
-
+                <Text style={styles.label}>Password</Text>
+                <View style={styles.passwordRow}>
+                    <TextInput
+                        style={[styles.input, { flex: 1 }]}
+                        placeholder="Min. 6 characters"
+                        placeholderTextColor="#4A5568"
+                        value={password}
+                        onChangeText={setPassword}
+                        secureTextEntry={!showPass}
+                        autoComplete="new-password"
+                    />
                     <TouchableOpacity
-                        style={[styles.button, loading && styles.buttonDisabled]}
-                        onPress={handleRegister}
-                        disabled={loading}
-                        activeOpacity={0.85}
+                        style={styles.eyeBtn}
+                        onPress={() => setShowPass(p => !p)}
                     >
-                        {loading ? (
-                            <ActivityIndicator color="#fff" />
-                        ) : (
-                            <Text style={styles.buttonText}>Create Account →</Text>
-                        )}
-                    </TouchableOpacity>
-
-                    <TouchableOpacity onPress={() => router.push('/login')} style={styles.linkBtn}>
-                        <Text style={styles.linkText}>
-                            Already have an account?{' '}
-                            <Text style={styles.linkAccent}>Sign In</Text>
-                        </Text>
+                        <Ionicons
+                            name={showPass ? 'eye-off-outline' : 'eye-outline'}
+                            size={20}
+                            color="#6C7A9C"
+                        />
                     </TouchableOpacity>
                 </View>
+
+                <Text style={styles.label}>Confirm Password</Text>
+                <TextInput
+                    style={styles.input}
+                    placeholder="Repeat password"
+                    placeholderTextColor="#4A5568"
+                    value={confirm}
+                    onChangeText={setConfirm}
+                    secureTextEntry={!showPass}
+                    autoComplete="new-password"
+                />
+
+                <TouchableOpacity
+                    style={[styles.button, loading && styles.buttonDisabled]}
+                    onPress={handleRegister}
+                    disabled={loading}
+                    activeOpacity={0.85}
+                >
+                    {loading
+                        ? <ActivityIndicator color="#FFFFFF" />
+                        : <Text style={styles.buttonText}>Create Account</Text>
+                    }
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                    style={styles.linkRow}
+                    onPress={() => router.replace('/login')}
+                >
+                    <Text style={styles.linkText}>
+                        Already have an account? <Text style={styles.link}>Sign In</Text>
+                    </Text>
+                </TouchableOpacity>
             </ScrollView>
         </KeyboardAvoidingView>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flexGrow: 1,
-        justifyContent: 'center',
-        padding: 28,
-        backgroundColor: '#0B132B',
-    },
-    header: {
-        alignItems: 'center',
-        marginBottom: 40,
-    },
-    logoRing: {
-        width: 72,
-        height: 72,
-        borderRadius: 36,
-        borderWidth: 2,
-        borderColor: '#3A86FF',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: 16,
-        backgroundColor: 'rgba(58,134,255,0.1)',
-    },
-    logoIcon: {
-        fontSize: 30,
-    },
-    title: {
-        fontSize: 28,
-        fontWeight: '800',
-        color: '#FFFFFF',
-        letterSpacing: 0.5,
-        marginBottom: 6,
-    },
-    subtitle: {
-        fontSize: 14,
-        color: '#8892A4',
-        letterSpacing: 1.5,
-        textTransform: 'uppercase',
-    },
-    form: {
-        gap: 4,
-    },
-    fieldGroup: {
-        marginBottom: 16,
-    },
-    label: {
-        fontSize: 11,
-        fontWeight: '700',
-        color: '#3A86FF',
-        letterSpacing: 2,
-        marginBottom: 8,
-    },
-    input: {
-        backgroundColor: '#141D35',
-        color: '#FFFFFF',
-        padding: 16,
-        borderRadius: 12,
-        fontSize: 15,
-        borderWidth: 1,
-        borderColor: '#1E2D50',
-    },
-    button: {
-        backgroundColor: '#3A86FF',
-        padding: 17,
-        borderRadius: 12,
-        alignItems: 'center',
-        marginTop: 8,
-        shadowColor: '#3A86FF',
-        shadowOpacity: 0.4,
-        shadowRadius: 12,
-        shadowOffset: { width: 0, height: 4 },
-        elevation: 6,
-    },
-    buttonDisabled: {
-        opacity: 0.6,
-    },
-    buttonText: {
-        color: '#FFFFFF',
-        fontSize: 16,
-        fontWeight: '700',
-        letterSpacing: 0.5,
-    },
-    linkBtn: {
-        marginTop: 20,
-        alignItems: 'center',
-    },
-    linkText: {
-        color: '#8892A4',
-        fontSize: 14,
-    },
-    linkAccent: {
-        color: '#3A86FF',
-        fontWeight: '700',
-    },
+    container:  { flex: 1, backgroundColor: '#0B132B' },
+    scroll:     { flexGrow: 1, padding: 24, paddingTop: Platform.OS === 'ios' ? 80 : 60 },
+    title:      { fontSize: 32, fontWeight: '800', color: '#FFFFFF', marginBottom: 8, letterSpacing: -0.5 },
+    subtitle:   { fontSize: 15, color: '#6C7A9C', marginBottom: 40, lineHeight: 22 },
+    label:      { color: '#8A9BAE', fontSize: 12, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 8, marginTop: 16 },
+    input:      { backgroundColor: '#0D1829', borderWidth: 1.5, borderColor: '#1A2540', borderRadius: 12, padding: 16, color: '#FFFFFF', fontSize: 16 },
+    passwordRow:{ flexDirection: 'row', alignItems: 'center', gap: 8 },
+    eyeBtn:     { position: 'absolute', right: 16, padding: 4 },
+    button:     { backgroundColor: '#3A86FF', borderRadius: 14, height: 56, justifyContent: 'center', alignItems: 'center', marginTop: 32, shadowColor: '#3A86FF', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 10, elevation: 8 },
+    buttonDisabled: { opacity: 0.6, shadowOpacity: 0 },
+    buttonText: { color: '#FFFFFF', fontSize: 17, fontWeight: '800' },
+    linkRow:    { marginTop: 24, alignItems: 'center' },
+    linkText:   { color: '#6C7A9C', fontSize: 14 },
+    link:       { color: '#3A86FF', fontWeight: '700' },
 });

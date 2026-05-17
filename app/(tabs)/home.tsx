@@ -1,6 +1,5 @@
 import { router } from 'expo-router';
-import { signOut } from 'firebase/auth';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { memo, useCallback, useEffect } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -12,25 +11,17 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { auth, getPersonalizedFeedFn } from '../../firebaseConfig';
-
-type Report = {
-    reportId: string;
-    imageUrl: string;
-    category: 'accident' | 'fire' | 'weather' | 'traffic' | 'other';
-    description?: string;
-    areaName?: string;
-    city: string;
-    timestamp: any;
-    status: 'active' | 'expired' | 'resolved';
-};
+import { useAuth } from '@/hooks/useAuth';
+import { useFeedStore } from '@/stores/feedStore';
+import { useProfileStore } from '@/stores/profileStore';
+import type { FeedReport } from '@/types/tabs';
 
 const CATEGORY_META: Record<string, { icon: string; color: string; label: string }> = {
-    accident: { icon: '🚗', color: '#FF6B6B', label: 'Accident' },
-    fire:     { icon: '🔥', color: '#FF9F43', label: 'Fire' },
-    weather:  { icon: '⛈️', color: '#54A0FF', label: 'Weather' },
-    traffic:  { icon: '🚦', color: '#FECA57', label: 'Traffic' },
-    other:    { icon: '📌', color: '#A0A0A0', label: 'Other' },
+    accident: { icon: 'CAR', color: '#FF6B6B', label: 'Accident' },
+    fire:     { icon: 'FIRE', color: '#FF9F43', label: 'Fire' },
+    weather:  { icon: 'WX', color: '#54A0FF', label: 'Weather' },
+    traffic:  { icon: 'ROAD', color: '#FECA57', label: 'Traffic' },
+    other:    { icon: 'INFO', color: '#A0A0A0', label: 'Other' },
 };
 
 const STATUS_META: Record<string, { color: string; label: string }> = {
@@ -52,7 +43,7 @@ function timeAgo(ts: any): string {
     }
 }
 
-function ReportCard({ item }: { item: Report }) {
+const ReportCard = memo(function ReportCard({ item }: { item: FeedReport }) {
     const meta = CATEGORY_META[item.category] ?? CATEGORY_META.other;
     const status = STATUS_META[item.status] ?? STATUS_META.active;
 
@@ -62,150 +53,126 @@ function ReportCard({ item }: { item: Report }) {
             activeOpacity={0.88}
             onPress={() => router.push({ pathname: '/report/[id]', params: { id: item.reportId } } as any)}
         >
-            {/* Image */}
-            <Image
-                source={{ uri: item.imageUrl }}
-                style={styles.cardImage}
-                resizeMode="cover"
-            />
-
-            {/* Category Badge */}
+            <Image source={{ uri: item.imageUrl }} style={styles.cardImage} resizeMode="cover" />
             <View style={[styles.categoryBadge, { backgroundColor: meta.color + '22', borderColor: meta.color }]}>
-                <Text style={styles.categoryBadgeIcon}>{meta.icon}</Text>
+                <Text style={[styles.categoryBadgeText, { color: meta.color }]}>{meta.icon}</Text>
                 <Text style={[styles.categoryBadgeText, { color: meta.color }]}>{meta.label}</Text>
             </View>
-
-            {/* Content */}
             <View style={styles.cardBody}>
                 <View style={styles.cardMeta}>
-                    <Text style={styles.cardLocation}>
-                        📍 {item.areaName ?? item.city}
-                    </Text>
+                    <Text style={styles.cardLocation}>{item.areaName ?? item.city}</Text>
                     <Text style={styles.cardTime}>{timeAgo(item.timestamp)}</Text>
                 </View>
-
-                {item.description ? (
-                    <Text style={styles.cardDesc} numberOfLines={2}>
-                        {item.description}
-                    </Text>
-                ) : null}
-
+                {item.description ? <Text style={styles.cardDesc} numberOfLines={2}>{item.description}</Text> : null}
                 <View style={styles.cardFooter}>
                     <View style={[styles.statusPill, { backgroundColor: status.color + '22' }]}>
                         <View style={[styles.statusDot, { backgroundColor: status.color }]} />
                         <Text style={[styles.statusText, { color: status.color }]}>{status.label}</Text>
                     </View>
-                    <Text style={styles.tapHint}>Tap to view →</Text>
+                    <Text style={styles.tapHint}>Tap to view</Text>
                 </View>
             </View>
         </TouchableOpacity>
     );
+});
+
+function SkeletonList() {
+    return (
+        <View style={styles.list}>
+            {[0, 1, 2].map((item) => (
+                <View key={item} style={styles.skeletonCard}>
+                    <View style={styles.skeletonImage} />
+                    <View style={styles.skeletonLineWide} />
+                    <View style={styles.skeletonLine} />
+                </View>
+            ))}
+        </View>
+    );
 }
 
 export default function HomeScreen() {
-    const [reports, setReports] = useState<Report[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
-    const user = auth.currentUser;
-
-    const fetchFeed = useCallback(async (silent = false) => {
-        if (!silent) setLoading(true);
-        try {
-            const getFeed = getPersonalizedFeedFn();
-            const result = await getFeed();
-            const data = result.data as { reports: Report[] };
-            setReports(data.reports ?? []);
-        } catch (error: any) {
-            if (error.code === 'not-found') {
-                // Onboarding not complete
-                router.replace('/onboarding');
-            } else {
-                Alert.alert('Error', error.message || 'Could not load feed.');
-            }
-        } finally {
-            setLoading(false);
-            setRefreshing(false);
-        }
-    }, []);
+    const {
+        reports,
+        loading,
+        refreshing,
+        loadingMore,
+        error,
+        nextCursor,
+        loadInitial,
+        refresh,
+        loadMore,
+    } = useFeedStore();
+    const { logoutUser } = useProfileStore();
+    const { user } = useAuth();
 
     useEffect(() => {
-        fetchFeed();
-    }, [fetchFeed]);
+        loadInitial();
+    }, [loadInitial]);
 
-    const handleSignOut = async () => {
+    const handleSignOut = useCallback(() => {
         Alert.alert('Sign Out', 'Are you sure?', [
             { text: 'Cancel', style: 'cancel' },
             {
                 text: 'Sign Out',
                 style: 'destructive',
                 onPress: async () => {
-                    await signOut(auth);
+                    await logoutUser();
                     router.replace('/login');
                 },
             },
         ]);
-    };
+    }, [logoutUser]);
+
+    const renderItem = useCallback(({ item }: { item: FeedReport }) => <ReportCard item={item} />, []);
 
     return (
         <View style={styles.container}>
-            {/* Header */}
             <View style={styles.header}>
                 <View>
-                    <Text style={styles.greeting}>
-                        Hello, {user?.displayName?.split(' ')[0] ?? 'there'} 👋
-                    </Text>
+                    <Text style={styles.greeting}>Hello, {user?.displayName?.split(' ')[0] ?? 'there'}</Text>
                     <Text style={styles.headerTitle}>Live Feed</Text>
                 </View>
                 <View style={styles.headerActions}>
-                    <TouchableOpacity
-                        style={styles.headerBtn}
-                        onPress={() => router.push('/(tabs)/alerts' as any)}
-                    >
-                        <Text style={styles.headerBtnIcon}>🔔</Text>
+                    <TouchableOpacity style={styles.headerBtn} onPress={() => router.push('/(tabs)/alerts' as any)}>
+                        <Text style={styles.headerBtnIcon}>AL</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.headerBtn} onPress={handleSignOut}>
-                        <Text style={styles.headerBtnIcon}>⎋</Text>
+                        <Text style={styles.headerBtnIcon}>OUT</Text>
                     </TouchableOpacity>
                 </View>
             </View>
 
-            {/* Feed */}
-            {loading ? (
+            {loading && reports.length === 0 ? (
+                <SkeletonList />
+            ) : error && reports.length === 0 ? (
                 <View style={styles.center}>
-                    <ActivityIndicator size="large" color="#3A86FF" />
-                    <Text style={styles.loadingText}>Loading feed...</Text>
+                    <Text style={styles.emptyTitle}>Feed unavailable</Text>
+                    <Text style={styles.emptySubtitle}>{error}</Text>
+                    <TouchableOpacity style={styles.reportCta} onPress={() => loadInitial(true)}>
+                        <Text style={styles.reportCtaText}>Retry</Text>
+                    </TouchableOpacity>
                 </View>
             ) : reports.length === 0 ? (
                 <View style={styles.center}>
-                    <Text style={styles.emptyIcon}>📭</Text>
                     <Text style={styles.emptyTitle}>No Reports Yet</Text>
-                    <Text style={styles.emptySubtitle}>
-                        Be the first to report an incident in your area.
-                    </Text>
-                    <TouchableOpacity
-                        style={styles.reportCta}
-                        onPress={() => router.push('/(tabs)/report' as any)}
-                    >
+                    <Text style={styles.emptySubtitle}>Be the first to report an incident in your area.</Text>
+                    <TouchableOpacity style={styles.reportCta} onPress={() => router.push('/(tabs)/report' as any)}>
                         <Text style={styles.reportCtaText}>Create Report</Text>
                     </TouchableOpacity>
                 </View>
             ) : (
                 <FlatList
                     data={reports}
-                    keyExtractor={(r) => r.reportId}
-                    renderItem={({ item }) => <ReportCard item={item} />}
+                    keyExtractor={(report) => report.reportId}
+                    renderItem={renderItem}
                     contentContainerStyle={styles.list}
                     showsVerticalScrollIndicator={false}
-                    refreshControl={
-                        <RefreshControl
-                            refreshing={refreshing}
-                            onRefresh={() => {
-                                setRefreshing(true);
-                                fetchFeed(true);
-                            }}
-                            tintColor="#3A86FF"
-                        />
-                    }
+                    onEndReached={() => {
+                        if (nextCursor) loadMore();
+                    }}
+                    onEndReachedThreshold={0.55}
+                    ListFooterComponent={loadingMore ? <ActivityIndicator color="#3A86FF" style={styles.footerLoader} /> : null}
+                    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#3A86FF" />}
                 />
             )}
         </View>
@@ -213,10 +180,7 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#0B132B',
-    },
+    container: { flex: 1, backgroundColor: '#0B132B' },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
@@ -227,23 +191,11 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: '#1E2D50',
     },
-    greeting: {
-        fontSize: 13,
-        color: '#8892A4',
-        marginBottom: 2,
-    },
-    headerTitle: {
-        fontSize: 26,
-        fontWeight: '800',
-        color: '#FFFFFF',
-        letterSpacing: 0.5,
-    },
-    headerActions: {
-        flexDirection: 'row',
-        gap: 10,
-    },
+    greeting: { fontSize: 13, color: '#8892A4', marginBottom: 2 },
+    headerTitle: { fontSize: 26, fontWeight: '800', color: '#FFFFFF', letterSpacing: 0.5 },
+    headerActions: { flexDirection: 'row', gap: 10 },
     headerBtn: {
-        width: 40,
+        minWidth: 40,
         height: 40,
         borderRadius: 20,
         backgroundColor: '#141D35',
@@ -251,27 +203,12 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         borderWidth: 1,
         borderColor: '#1E2D50',
+        paddingHorizontal: 10,
     },
-    headerBtnIcon: {
-        fontSize: 16,
-    },
-    list: {
-        padding: 16,
-        gap: 14,
-        paddingBottom: 100,
-    },
-    card: {
-        backgroundColor: '#141D35',
-        borderRadius: 16,
-        overflow: 'hidden',
-        borderWidth: 1,
-        borderColor: '#1E2D50',
-    },
-    cardImage: {
-        width: '100%',
-        height: 180,
-        backgroundColor: '#0F1929',
-    },
+    headerBtnIcon: { fontSize: 11, color: '#FFFFFF', fontWeight: '800' },
+    list: { padding: 16, gap: 14, paddingBottom: 100 },
+    card: { backgroundColor: '#141D35', borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: '#1E2D50' },
+    cardImage: { width: '100%', height: 180, backgroundColor: '#0F1929' },
     categoryBadge: {
         position: 'absolute',
         top: 12,
@@ -284,101 +221,25 @@ const styles = StyleSheet.create({
         borderRadius: 20,
         borderWidth: 1,
     },
-    categoryBadgeIcon: {
-        fontSize: 12,
-    },
-    categoryBadgeText: {
-        fontSize: 12,
-        fontWeight: '700',
-    },
-    cardBody: {
-        padding: 14,
-        gap: 8,
-    },
-    cardMeta: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-    },
-    cardLocation: {
-        fontSize: 13,
-        color: '#C5C6C7',
-        fontWeight: '600',
-        flex: 1,
-    },
-    cardTime: {
-        fontSize: 12,
-        color: '#4A5568',
-    },
-    cardDesc: {
-        fontSize: 14,
-        color: '#8892A4',
-        lineHeight: 20,
-    },
-    cardFooter: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginTop: 4,
-    },
-    statusPill: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        paddingHorizontal: 10,
-        paddingVertical: 4,
-        borderRadius: 20,
-    },
-    statusDot: {
-        width: 6,
-        height: 6,
-        borderRadius: 3,
-    },
-    statusText: {
-        fontSize: 12,
-        fontWeight: '700',
-    },
-    tapHint: {
-        fontSize: 12,
-        color: '#4A5568',
-    },
-    center: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 40,
-    },
-    loadingText: {
-        color: '#8892A4',
-        marginTop: 12,
-        fontSize: 14,
-    },
-    emptyIcon: {
-        fontSize: 48,
-        marginBottom: 16,
-    },
-    emptyTitle: {
-        fontSize: 20,
-        fontWeight: '700',
-        color: '#FFFFFF',
-        marginBottom: 8,
-    },
-    emptySubtitle: {
-        fontSize: 14,
-        color: '#8892A4',
-        textAlign: 'center',
-        lineHeight: 20,
-        marginBottom: 24,
-    },
-    reportCta: {
-        backgroundColor: '#3A86FF',
-        paddingHorizontal: 24,
-        paddingVertical: 12,
-        borderRadius: 12,
-    },
-    reportCtaText: {
-        color: '#fff',
-        fontWeight: '700',
-        fontSize: 15,
-    },
+    categoryBadgeText: { fontSize: 12, fontWeight: '700' },
+    cardBody: { padding: 14, gap: 8 },
+    cardMeta: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    cardLocation: { fontSize: 13, color: '#C5C6C7', fontWeight: '600', flex: 1 },
+    cardTime: { fontSize: 12, color: '#4A5568' },
+    cardDesc: { fontSize: 14, color: '#8892A4', lineHeight: 20 },
+    cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
+    statusPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+    statusDot: { width: 6, height: 6, borderRadius: 3 },
+    statusText: { fontSize: 12, fontWeight: '700' },
+    tapHint: { fontSize: 12, color: '#4A5568' },
+    center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
+    emptyTitle: { fontSize: 20, fontWeight: '700', color: '#FFFFFF', marginBottom: 8 },
+    emptySubtitle: { fontSize: 14, color: '#8892A4', textAlign: 'center', lineHeight: 20, marginBottom: 24 },
+    reportCta: { backgroundColor: '#3A86FF', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 },
+    reportCtaText: { color: '#fff', fontWeight: '700', fontSize: 15 },
+    footerLoader: { paddingVertical: 20 },
+    skeletonCard: { backgroundColor: '#141D35', borderRadius: 16, borderWidth: 1, borderColor: '#1E2D50', padding: 14 },
+    skeletonImage: { height: 170, borderRadius: 12, backgroundColor: '#0F1929', marginBottom: 14 },
+    skeletonLineWide: { height: 14, borderRadius: 7, backgroundColor: '#1E2D50', width: '75%', marginBottom: 10 },
+    skeletonLine: { height: 12, borderRadius: 6, backgroundColor: '#1E2D50', width: '48%' },
 });

@@ -11,7 +11,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { auth, db, submitPollVoteFn } from '../../firebaseConfig';
+import { auth, db, submitPollVoteFn } from '@/lib/firebase';
 
 type Report = {
     reportId: string;
@@ -100,7 +100,7 @@ export default function ReportDetailScreen() {
                 setLoading(false);
             }
         })();
-    }, [id]);
+    }, [id, uid]);
 
     const handleVote = async (vote: 'yes' | 'no') => {
         if (!poll) return;

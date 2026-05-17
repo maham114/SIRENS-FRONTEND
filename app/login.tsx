@@ -1,7 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
 import React, { useState } from 'react';
 import {
     ActivityIndicator,
@@ -16,7 +14,7 @@ import {
     View,
 } from 'react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
-import { auth, db } from '../firebaseConfig';
+import { loginWithEmail, sendResetPasswordEmail } from '@/services/authService';
 
 export default function LoginScreen() {
     const [email, setEmail] = useState('');
@@ -34,16 +32,7 @@ export default function LoginScreen() {
 
         setLoading(true);
         try {
-            const { user } = await signInWithEmailAndPassword(auth, email, password);
-
-            const userDoc = await getDoc(doc(db, 'users', user.uid));
-            const onboardingComplete = userDoc.data()?.onboardingComplete ?? false;
-
-            if (onboardingComplete) {
-                router.replace('/(tabs)/home');
-            } else {
-                router.replace('/onboarding');
-            }
+            await loginWithEmail(email, password);
         } catch (error: any) {
             const msg =
                 error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password'
@@ -52,6 +41,23 @@ export default function LoginScreen() {
                     ? 'Too many attempts. Please try again later.'
                     : error.message || 'Login failed. Please try again.';
             Alert.alert('Login Failed', msg);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleForgotPassword = async () => {
+        if (!email.trim()) {
+            Alert.alert('Email Required', 'Enter your email address first.');
+            return;
+        }
+
+        setLoading(true);
+        try {
+            await sendResetPasswordEmail(email);
+            Alert.alert('Check Your Email', 'Password reset instructions have been sent.');
+        } catch (error: any) {
+            Alert.alert('Reset Failed', error.message || 'Could not send password reset email.');
         } finally {
             setLoading(false);
         }
@@ -114,7 +120,7 @@ export default function LoginScreen() {
                         </TouchableOpacity>
                     </View>
 
-                    <TouchableOpacity style={styles.forgotPassword}>
+                    <TouchableOpacity style={styles.forgotPassword} onPress={handleForgotPassword} disabled={loading}>
                         <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
                     </TouchableOpacity>
 
@@ -132,7 +138,7 @@ export default function LoginScreen() {
                     </TouchableOpacity>
 
                     <View style={styles.registerContainer}>
-                        <Text style={styles.registerText}>Don't have an account? </Text>
+                        <Text style={styles.registerText}>Do not have an account? </Text>
                         <TouchableOpacity onPress={() => router.push('/register')}>
                             <Text style={styles.registerLink}>Register</Text>
                         </TouchableOpacity>
