@@ -23,7 +23,8 @@ import {
     WorkLocationStep,
 } from '@/components/onboarding/OnboardingSteps';
 import { useAuth } from '@/hooks/useAuth';
-import { updateOnboardingFn } from '@/lib/firebase';
+import { auth } from '@/lib/firebase';
+import { saveOnboardingProfile } from '@/services/profileService';
 import { TOTAL_STEPS, useOnboardingStore } from '@/stores/onboardingStore';
 import type { AlertPreferences } from '@/stores/onboardingStore';
 import { normalizeLocation, toBackendLocation } from '@/utils/onboardingLocation';
@@ -115,7 +116,43 @@ export default function OnboardingScreen() {
         return true;
     };
 
+function detectUndefinedFields(obj: any, path = ''): string[] {
+    const undefinedFields: string[] = [];
+    if (obj === undefined) {
+        undefinedFields.push(path || 'root');
+    } else if (Array.isArray(obj)) {
+        obj.forEach((item, idx) => {
+            undefinedFields.push(...detectUndefinedFields(item, `${path}[${idx}]`));
+        });
+    } else if (typeof obj === 'object' && obj !== null) {
+        Object.keys(obj).forEach(key => {
+            undefinedFields.push(...detectUndefinedFields(obj[key], path ? `${path}.${key}` : key));
+        });
+    }
+    return undefinedFields;
+}
+
+function sanitizePayload(obj: any): any {
+    if (obj === undefined) return null;
+    if (obj === null) return null;
+    if (Array.isArray(obj)) {
+        return obj.map(sanitizePayload);
+    }
+    if (typeof obj === 'object') {
+        const sanitized: Record<string, any> = {};
+        for (const key of Object.keys(obj)) {
+            if (obj[key] !== undefined) {
+                sanitized[key] = sanitizePayload(obj[key]);
+            }
+        }
+        return sanitized;
+    }
+    return obj;
+}
+
     const submitData = async () => {
+        console.log('[ONBOARDING DEBUG] Starting onboarding submission flow...');
+
         for (let candidateStep = 1; candidateStep <= 5; candidateStep += 1) {
             const message = validateOnboardingStep({
                 step: candidateStep,
@@ -127,6 +164,7 @@ export default function OnboardingScreen() {
                 frequentAreas,
             });
             if (message) {
+                console.warn(`[ONBOARDING DEBUG] Validation failed at step ${candidateStep}:`, message);
                 setError(message);
                 Alert.alert('Required', message);
                 return;
@@ -136,29 +174,83 @@ export default function OnboardingScreen() {
         setLoading(true);
         setError(null);
         try {
-            const submitOnboarding = updateOnboardingFn();
+            // Ensure authenticated user state exists
+            const currentUser = auth.currentUser;
+            if (!currentUser) {
+                console.error('[ONBOARDING DEBUG] Submission aborted: No authenticated user found.');
+                throw new Error('You must be signed in to complete onboarding.');
+            }
+
+            console.log('[ONBOARDING DEBUG] Authenticated user UID:', currentUser.uid);
+
+            // Filter frequentAreas to prevent empty or invalid entries
+            const validFrequentAreas = (frequentAreas || [])
+                .filter(area => 
+                    area && 
+                    area.area && 
+                    area.area.trim().length > 0 && 
+                    area.coords && 
+                    typeof area.coords.latitude === 'number' && 
+                    typeof area.coords.longitude === 'number' && 
+                    !isNaN(area.coords.latitude) && 
+                    !isNaN(area.coords.longitude)
+                )
+                .map(toBackendLocation);
+
+            console.log('[ONBOARDING DEBUG] Filtered/Valid frequent areas count:', validFrequentAreas.length);
+
             const onboardingData = {
                 role: 'citizen',
                 city: city.trim(),
                 district: district.trim(),
                 homeLocation: toBackendLocation(homeLocation),
                 workLocation: toBackendLocation(workLocation),
-                frequentAreas: frequentAreas.map(toBackendLocation),
+                frequentAreas: validFrequentAreas,
                 preferences,
+                onboardingComplete: true, // Crucial to update onboarding completed status
             };
 
-            await submitOnboarding(onboardingData);
+            // Detect any undefined values recursively before sanitizing
+            const undefinedFields = detectUndefinedFields(onboardingData);
+            if (undefinedFields.length > 0) {
+                console.warn('[ONBOARDING DEBUG] Undefined payload keys detected:', undefinedFields);
+            } else {
+                console.log('[ONBOARDING DEBUG] No undefined payload keys detected.');
+            }
 
+            // Recursively sanitize the payload to strip all undefined values safely
+            const sanitizedData = sanitizePayload(onboardingData);
+            console.log('[ONBOARDING DEBUG] Sanitized onboarding payload before Firestore write:', JSON.stringify(sanitizedData, null, 2));
+
+            // Write onboarding profile directly to Firestore
+            console.log('[ONBOARDING DEBUG] Writing onboarding profile data directly to Firestore users collection...');
+            await saveOnboardingProfile(currentUser.uid, sanitizedData);
+            console.log('[ONBOARDING DEBUG] Firestore write successfully completed and verified.');
+
+            // Refresh the Auth Provider React Context
+            console.log('[ONBOARDING DEBUG] Refreshing user profile in auth provider...');
             await refreshProfile();
-            clearDraft();
+            console.log('[ONBOARDING DEBUG] User profile refreshed successfully.');
+
+            // Clear draft state ONLY if we are in setup mode to avoid resetting draft on edit mode
+            if (storeMode !== 'edit') {
+                console.log('[ONBOARDING DEBUG] Clearing onboarding draft from store.');
+                clearDraft();
+            } else {
+                console.log('[ONBOARDING DEBUG] Preserving store draft (Edit mode).');
+            }
+
+            console.log('[ONBOARDING DEBUG] Navigation event: Redirecting to /(tabs)/home');
             Alert.alert('Success', storeMode === 'edit' ? 'Locations updated.' : 'Profile setup complete!');
             router.replace('/(tabs)/home');
         } catch (submitError: any) {
+            console.error('[ONBOARDING DEBUG] Error encountered during onboarding submit:', submitError);
             const message = submitError.message || 'Could not save onboarding data. Please try again.';
             setError(message);
             Alert.alert('Error saving data', message);
         } finally {
             setLoading(false);
+            console.log('[ONBOARDING DEBUG] Onboarding submission flow finished.');
         }
     };
 

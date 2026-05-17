@@ -38,11 +38,20 @@ export function normalizeLocation(value: unknown): OnboardingLocation {
   };
 }
 
-export function toBackendLocation(location: OnboardingLocation) {
+export function toBackendLocation(location: OnboardingLocation | null | undefined) {
+  if (!location) return { area: '', coords: null };
+  const hasValidCoords =
+    location.coords &&
+    typeof location.coords.latitude === 'number' &&
+    typeof location.coords.longitude === 'number' &&
+    !isNaN(location.coords.latitude) &&
+    !isNaN(location.coords.longitude);
+
   return {
-    area: location.area.trim(),
-    coords: location.coords
-      ? [location.coords.latitude, location.coords.longitude]
+    area: (location.area || '').trim(),
+    coords: hasValidCoords
+      ? [location.coords!.latitude, location.coords!.longitude]
       : null,
   };
 }
+

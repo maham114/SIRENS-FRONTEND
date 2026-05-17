@@ -27,3 +27,13 @@ export async function createInitialProfile(uid: string, email: string | null): P
     createdAt: serverTimestamp(),
   });
 }
+
+export async function saveOnboardingProfile(uid: string, profileData: UserProfile): Promise<void> {
+  const userDocRef = doc(db, 'users', uid);
+  await setDoc(userDocRef, {
+    ...profileData,
+    onboardingComplete: true,
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
+}
+
