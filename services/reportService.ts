@@ -1,5 +1,6 @@
-import { createReportFn, getUploadUrlFn } from '@/lib/firebase';
+import { createReportFn, getUploadUrlFn, db } from '@/lib/firebase';
 import type { ReportDraft } from '@/types/tabs';
+import { doc, setDoc } from 'firebase/firestore';
 
 type UploadUrlResponse = {
   uploadUrl?: string;
@@ -17,49 +18,71 @@ export async function uploadReportImage(
     throw new Error('Please add a photo before submitting.');
   }
 
-  onProgress?.(0.08);
-  const getUploadUrl = getUploadUrlFn();
-  const uploadResult = await getUploadUrl({
-    contentType: draft.imageMimeType ?? 'image/jpeg',
-    fileName: draft.imageName ?? `report-${Date.now()}.jpg`,
-  });
-  const uploadData = uploadResult.data as UploadUrlResponse;
-  const uploadUrl = uploadData.uploadUrl;
-  const imageUrl = uploadData.imageUrl ?? uploadData.publicUrl ?? uploadData.fileUrl;
+  onProgress?.(0.2);
+  const formData = new FormData();
+  formData.append('reqtype', 'fileupload');
+  formData.append('fileToUpload', {
+    uri: draft.imageUri,
+    type: draft.imageMimeType ?? 'image/jpeg',
+    name: draft.imageName ?? `report-${Date.now()}.jpg`,
+  } as any);
 
-  if (!uploadUrl || !imageUrl) {
-    throw new Error('Could not prepare image upload.');
-  }
-
-  onProgress?.(0.18);
-  const blob = await (await fetch(draft.imageUri)).blob();
-  onProgress?.(0.35);
-
-  const response = await fetch(uploadUrl, {
-    method: 'PUT',
-    headers: { 'Content-Type': draft.imageMimeType ?? 'image/jpeg' },
-    body: blob,
+  onProgress?.(0.5);
+  const response = await fetch('https://catbox.moe/user/api.php', {
+    method: 'POST',
+    body: formData,
   });
 
   if (!response.ok) {
-    throw new Error('Image upload failed.');
+    throw new Error('Image upload to hosting service failed.');
   }
 
-  onProgress?.(1);
-  return imageUrl;
+  const imageUrl = await response.text();
+  if (!imageUrl || !imageUrl.startsWith('http')) {
+    throw new Error('Invalid image link returned from hosting service.');
+  }
+
+  onProgress?.(1.0);
+  return imageUrl.trim();
 }
 
-export async function submitCommunityReport(draft: ReportDraft, imageUrl: string): Promise<void> {
+export async function submitCommunityReport(draft: ReportDraft, imageUrl: string): Promise<string> {
   if (!draft.category) {
     throw new Error('Please select a report type.');
   }
 
   const createReport = createReportFn();
-  await createReport({
+  const result = await createReport({
     category: draft.category,
     description: draft.description.trim(),
     areaName: draft.areaName.trim(),
     city: draft.city.trim(),
-    imageUrl,
+    imageUrl: imageUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=800',
+    location: draft.coords
+      ? {
+          latitude: draft.coords.latitude,
+          longitude: draft.coords.longitude,
+        }
+      : null,
   });
+
+  const resData = result.data as { success?: boolean; reportId?: string };
+  const reportId = resData.reportId;
+
+  if (!reportId) {
+    throw new Error('Failed to create report document on backend.');
+  }
+
+  // Merge custom title and severity directly in Firestore
+  const reportDocRef = doc(db, 'reports', reportId);
+  await setDoc(
+    reportDocRef,
+    {
+      title: draft.title?.trim() ?? '',
+      severity: draft.severity ?? 'medium',
+    },
+    { merge: true }
+  );
+
+  return reportId;
 }

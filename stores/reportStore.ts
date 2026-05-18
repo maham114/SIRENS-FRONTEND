@@ -4,9 +4,12 @@ import type { ReportCategory, ReportDraft, UploadStage } from '@/types/tabs';
 
 const initialDraft: ReportDraft = {
   category: null,
+  title: '',
   description: '',
+  severity: null,
   areaName: '',
   city: '',
+  coords: null,
   imageUri: null,
 };
 
@@ -46,12 +49,15 @@ export const useReportStore = create<ReportStore>((set, get) => ({
   validate: () => {
     const { draft } = get();
     if (!draft.category) return 'Please select a report type.';
-    if (!draft.imageUri) return 'Please add a photo.';
-    if (!draft.city.trim()) return 'Please enter a city.';
-    if (!draft.areaName.trim()) return 'Please enter an area name.';
+    if (!draft.title.trim()) return 'Please enter a title.';
+    if (draft.title.trim().length < 5) return 'Title must be at least 5 characters.';
     if (!draft.description.trim() || draft.description.trim().length < 10) {
       return 'Please add a short description with at least 10 characters.';
     }
+    if (!draft.severity) return 'Please select a severity level.';
+    if (!draft.city.trim()) return 'Please enter a city.';
+    if (!draft.areaName.trim()) return 'Please enter an area name.';
+    if (!draft.coords) return 'Please pin a location on the map.';
     return null;
   },
   submit: async () => {
@@ -65,7 +71,10 @@ export const useReportStore = create<ReportStore>((set, get) => ({
 
     set({ submitting: true, stage: 'uploading', progress: 0, error: null });
     try {
-      const imageUrl = await uploadReportImage(get().draft, (progress) => set({ progress }));
+      let imageUrl = '';
+      if (get().draft.imageUri) {
+        imageUrl = await uploadReportImage(get().draft, (progress) => set({ progress }));
+      }
       set({ stage: 'submitting', progress: 1 });
       await submitCommunityReport(get().draft, imageUrl);
       set({ stage: 'success' });

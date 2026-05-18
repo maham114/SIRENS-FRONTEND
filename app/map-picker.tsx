@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import MapView, { Marker, type MapPressEvent, type Region } from 'react-native-maps';
 import { useOnboardingStore, type Coordinates } from '@/stores/onboardingStore';
+import { useReportStore } from '@/stores/reportStore';
 import { parseLocationTarget } from '@/utils/onboardingLocation';
 
 const FALLBACK_REGION: Region = {
@@ -64,13 +65,22 @@ export default function MapPicker() {
 
     const handleConfirm = () => {
         if (!selectedLocation || !parsedTarget) return;
-        setLocationCoords(parsedTarget, selectedLocation);
+        if (parsedTarget.kind === 'report') {
+            useReportStore.getState().setField('coords', selectedLocation);
+        } else {
+            setLocationCoords(parsedTarget, selectedLocation);
+        }
         goBackToOnboarding();
     };
 
     const goBackToOnboarding = () => {
         if (router.canGoBack()) {
             router.back();
+            return;
+        }
+
+        if (parsedTarget?.kind === 'report') {
+            router.replace('/(tabs)/report');
             return;
         }
 

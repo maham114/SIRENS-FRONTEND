@@ -23,7 +23,8 @@ export type AlertPreferences = {
 export type LocationTarget =
   | { kind: 'home' }
   | { kind: 'work' }
-  | { kind: 'frequent'; index: number };
+  | { kind: 'frequent'; index: number }
+  | { kind: 'report' };
 
 type OnboardingMode = 'setup' | 'edit';
 
@@ -111,11 +112,14 @@ export const useOnboardingStore = create<OnboardingStore>()(
           if (target.kind === 'work') {
             return { workLocation: { ...state.workLocation, coords } };
           }
-          return {
-            frequentAreas: state.frequentAreas.map((area, i) =>
-              i === target.index ? { ...area, coords } : area
-            ),
-          };
+          if (target.kind === 'frequent') {
+            return {
+              frequentAreas: state.frequentAreas.map((area, i) =>
+                i === target.index ? { ...area, coords } : area
+              ),
+            };
+          }
+          return {};
         }),
       setStep: (step) => set({ step: Math.min(Math.max(step, 1), TOTAL_STEPS) }),
       nextStep: () => set((state) => ({ step: Math.min(state.step + 1, TOTAL_STEPS) })),

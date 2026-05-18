@@ -17,7 +17,7 @@ function LoadingScreen({ message }: { message?: string }) {
 function RouteGuard() {
   const { user, profile, authLoading, profileLoading, error } = useAuth();
   const segments = useSegments();
-  const params = useGlobalSearchParams<{ mode?: string }>();
+  const params = useGlobalSearchParams<{ mode?: string; target?: string }>();
 
   useEffect(() => {
     if (authLoading || profileLoading) return;
@@ -28,6 +28,7 @@ function RouteGuard() {
     const inAppRoute = root === '(tabs)' || root === 'report';
     const atIndex = !root;
     const editingOnboarding = params.mode === 'edit';
+    const isReportLocationPicker = params.target === 'report';
 
     if (!user) {
       if (!inAuthRoute) router.replace('/login');
@@ -41,7 +42,7 @@ function RouteGuard() {
       return;
     }
 
-    if (inOnboardingRoute && editingOnboarding) {
+    if (inOnboardingRoute && (editingOnboarding || isReportLocationPicker)) {
       return;
     }
 
@@ -53,7 +54,7 @@ function RouteGuard() {
     if (!inAppRoute) {
       router.replace('/(tabs)/home');
     }
-  }, [authLoading, params.mode, profile, profileLoading, segments, user]);
+  }, [authLoading, params.mode, params.target, profile, profileLoading, segments, user]);
 
   if (authLoading) {
     return <LoadingScreen message="Restoring session..." />;

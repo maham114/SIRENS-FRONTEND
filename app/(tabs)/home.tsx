@@ -1,7 +1,7 @@
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import { signOut } from 'firebase/auth';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
@@ -21,7 +21,7 @@ import { auth, db, getPersonalizedFeedFn, triggerSOSFn } from '../../firebaseCon
 type Report = {
     reportId: string;
     imageUrl: string;
-    category: 'accident' | 'fire' | 'weather' | 'traffic' | 'other';
+    category: 'accident' | 'crime' | 'fire' | 'medical' | 'traffic' | 'weather' | 'infrastructure' | 'emergency' | 'other';
     description?: string;
     areaName?: string;
     city: string;
@@ -40,11 +40,15 @@ type OfficialAlert = {
 };
 
 const CATEGORY_META: Record<string, { icon: string; color: string; label: string }> = {
-    accident: { icon: '🚗', color: '#FF6B6B', label: 'Accident' },
-    fire:     { icon: '🔥', color: '#FF9F43', label: 'Fire' },
-    weather:  { icon: '⛈️', color: '#54A0FF', label: 'Weather' },
-    traffic:  { icon: '🚦', color: '#FECA57', label: 'Traffic' },
-    other:    { icon: '📌', color: '#A0A0A0', label: 'Other' },
+    accident:       { icon: '🚗', color: '#FF3B30', label: 'Accident' },
+    crime:          { icon: '🚨', color: '#FF3B30', label: 'Crime' },
+    fire:           { icon: '🔥', color: '#FF9500', label: 'Fire' },
+    medical:        { icon: '🩺', color: '#34C759', label: 'Medical' },
+    traffic:        { icon: '🚦', color: '#FFCC00', label: 'Traffic' },
+    weather:        { icon: '⛈️', color: '#5AC8FA', label: 'Weather' },
+    infrastructure: { icon: '🚧', color: '#AF52DE', label: 'Infrastructure' },
+    emergency:      { icon: '🆘', color: '#FF2D55', label: 'Emergency' },
+    other:          { icon: '📌', color: '#8E8E93', label: 'Other' },
 };
 
 const STATUS_META: Record<string, { color: string; label: string }> = {
@@ -280,7 +284,26 @@ export default function HomeScreen() {
     const [dismissed, setDismissed]       = useState<Set<string>>(new Set());
     const user = auth.currentUser;
 
-    // Fetch personalized feed
+    // Fetch user profile to enable official city-level alerts
+    useEffect(() => {
+        if (!user) return;
+        const fetchUserProfile = async () => {
+            try {
+                const userDoc = await getDoc(doc(db, 'users', user.uid));
+                if (userDoc.exists()) {
+                    const data = userDoc.data();
+                    if (data?.city) {
+                        setUserCity(data.city);
+                    }
+                }
+            } catch (err) {
+                console.log("Error loading user profile for city alerts:", err);
+            }
+        };
+        fetchUserProfile();
+    }, [user]);
+
+    // Fetch personalized feed with direct Firestore query fallback
     const fetchFeed = useCallback(async (silent = false) => {
         if (!silent) setLoading(true);
         try {
@@ -291,8 +314,34 @@ export default function HomeScreen() {
         } catch (error: any) {
             if (error.code === 'not-found') {
                 router.replace('/onboarding');
-            } else {
-                Alert.alert('Error', error.message || 'Could not load feed.');
+                return;
+            }
+
+            console.log("Personalized feed Cloud Function failed. Falling back to direct Firestore fetch:", error.message);
+            try {
+                const q = query(
+                    collection(db, 'reports'),
+                    orderBy('timestamp', 'desc'),
+                    limit(50)
+                );
+                const querySnapshot = await getDocs(q);
+                const fetchedReports: Report[] = [];
+                querySnapshot.forEach((docSnap) => {
+                    const data = docSnap.data();
+                    fetchedReports.push({
+                        reportId: docSnap.id,
+                        imageUrl: data.imageUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=800',
+                        category: data.category || 'other',
+                        description: data.description || '',
+                        areaName: data.areaName || '',
+                        city: data.city || '',
+                        timestamp: data.timestamp,
+                        status: data.status || 'active',
+                    });
+                });
+                setReports(fetchedReports);
+            } catch (fallbackError: any) {
+                Alert.alert('Error', fallbackError.message || 'Could not load feed.');
             }
         } finally {
             setLoading(false);

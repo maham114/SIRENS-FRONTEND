@@ -1,6 +1,15 @@
 import type { UserProfile } from '@/services/profileService';
 
-export type ReportCategory = 'accident' | 'fire' | 'weather' | 'traffic' | 'other';
+export type ReportCategory =
+  | 'traffic'
+  | 'weather'
+  | 'fire'
+  | 'crime'
+  | 'medical'
+  | 'infrastructure'
+  | 'emergency'
+  | 'accident'
+  | 'other';
 export type ReportStatus = 'active' | 'expired' | 'resolved';
 
 export type FeedReport = {
@@ -35,9 +44,12 @@ export type AlertItem = {
 
 export type ReportDraft = {
   category: ReportCategory | null;
+  title: string;
   description: string;
+  severity: 'low' | 'medium' | 'high' | 'critical' | null;
   areaName: string;
   city: string;
+  coords: { latitude: number; longitude: number } | null;
   imageUri: string | null;
   imageMimeType?: string;
   imageName?: string;

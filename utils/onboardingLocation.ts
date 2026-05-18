@@ -3,6 +3,7 @@ import type { Coordinates, LocationTarget, OnboardingLocation } from '@/stores/o
 export function parseLocationTarget(target?: string): LocationTarget | null {
   if (target === 'home') return { kind: 'home' };
   if (target === 'work') return { kind: 'work' };
+  if (target === 'report') return { kind: 'report' };
   if (target?.startsWith('frequent-')) {
     const index = Number(target.split('-')[1]);
     return Number.isInteger(index) && index >= 0 ? { kind: 'frequent', index } : null;
@@ -11,6 +12,7 @@ export function parseLocationTarget(target?: string): LocationTarget | null {
 }
 
 export function locationTargetToParam(target: LocationTarget) {
+  if (target.kind === 'report') return 'report';
   return target.kind === 'frequent' ? `frequent-${target.index}` : target.kind;
 }
 
