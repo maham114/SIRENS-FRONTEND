@@ -27,4 +27,12 @@ export const updateOnboardingFn    = () => httpsCallable(functions, 'updateOnboa
 export const getPersonalizedFeedFn = () => httpsCallable(functions, 'getPersonalizedFeed');
 export const setAlertPrefsFn       = () => httpsCallable(functions, 'setAlertPreferences');
 export const submitPollVoteFn      = () => httpsCallable(functions, 'submitPollVote');
-export const triggerSOSFn = () => httpsCallable(functions, 'triggerSOS');
+export const triggerSOSFn          = () => httpsCallable(functions, 'triggerSOS');
+
+// ─── Newly Discovered Backend Functions ────────────────────────────────────────
+export const sendOfficialAlertFn        = () => httpsCallable(functions, 'sendOfficialAlert');
+export const submitSOSFn                = () => httpsCallable(functions, 'submitSOS');
+export const getSOSListFn               = () => httpsCallable(functions, 'getSOSList');
+export const submitReportFn             = () => httpsCallable(functions, 'submitReport');
+export const triggerImpactEvaluationFn  = () => httpsCallable(functions, 'triggerImpactEvaluation');
+export const resolveReportFn            = () => httpsCallable(functions, 'resolveReport');

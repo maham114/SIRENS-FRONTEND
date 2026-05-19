@@ -69,10 +69,32 @@ export default function AlertsScreen() {
         return stop;
     }, [start, stop]);
 
+    const filteredAlerts = useMemo(() => {
+        return alerts.filter((alert) => {
+            // 1. Filter High Severity Only (only allow 'critical' and 'high')
+            if (preferences.highSeverityOnly) {
+                const isHigh = alert.severity === 'critical' || alert.severity === 'high';
+                if (!isHigh) return false;
+            }
+            
+            // 2. Filter Weather Category
+            if (alert.category === 'weather' && !preferences.weather) {
+                return false;
+            }
+            
+            // 3. Filter Traffic Category
+            if (alert.category === 'traffic' && !preferences.traffic) {
+                return false;
+            }
+            
+            return true;
+        });
+    }, [alerts, preferences]);
+
     const groupedAlerts = useMemo(() => ({
-        critical: alerts.filter((alert) => alert.severity === 'critical' || alert.severity === 'high'),
-        routine: alerts.filter((alert) => alert.severity !== 'critical' && alert.severity !== 'high'),
-    }), [alerts]);
+        critical: filteredAlerts.filter((alert) => alert.severity === 'critical' || alert.severity === 'high'),
+        routine: filteredAlerts.filter((alert) => alert.severity !== 'critical' && alert.severity !== 'high'),
+    }), [filteredAlerts]);
 
     const setPref = <K extends keyof AlertPreferences>(key: K, value: AlertPreferences[K]) => {
         updatePreferences({ ...preferences, [key]: value });
@@ -163,16 +185,51 @@ export default function AlertsScreen() {
             </View>
 
             <View style={styles.card}>
-                <Text style={styles.cardTitle}>LIVE ALERTS</Text>
-                {alerts.length === 0 ? (
-                    <Text style={styles.emptyAlerts}>No alerts are active right now.</Text>
+                <Text style={styles.cardTitle}>LIVE ALERT STATUS</Text>
+                {filteredAlerts.length === 0 ? (
+                    <Text style={styles.emptyAlerts}>No alerts are active right now under your preferences.</Text>
                 ) : (
-                    <>
-                        <AlertGroup title="Critical" count={groupedAlerts.critical.length} />
-                        <AlertGroup title="Routine" count={groupedAlerts.routine.length} />
-                    </>
+                    <View style={styles.statContainer}>
+                        <View style={[styles.statBadge, { borderColor: 'rgba(255, 59, 48, 0.4)', backgroundColor: 'rgba(255, 59, 48, 0.08)' }]}>
+                            <Text style={[styles.statNumber, { color: '#FF3B30' }]}>{groupedAlerts.critical.length}</Text>
+                            <Text style={styles.statLabelText}>Critical Alerts</Text>
+                        </View>
+                        <View style={[styles.statBadge, { borderColor: 'rgba(255, 149, 0, 0.4)', backgroundColor: 'rgba(255, 149, 0, 0.08)' }]}>
+                            <Text style={[styles.statNumber, { color: '#FF9500' }]}>{groupedAlerts.routine.length}</Text>
+                            <Text style={styles.statLabelText}>Routine Alerts</Text>
+                        </View>
+                    </View>
                 )}
             </View>
+
+            {/* Premium Active Emergency Broadcast Feed list */}
+            {filteredAlerts.length > 0 && (
+                <View style={styles.feedCard}>
+                    <Text style={styles.feedTitle}>⚡ ACTIVE EMERGENCY BROADCAST FEED</Text>
+                    {filteredAlerts.map((alert) => {
+                        const isCritical = alert.severity === 'critical' || alert.severity === 'high';
+                        const color = isCritical ? '#FF3B30' : '#FF9500';
+                        return (
+                            <View key={alert.id} style={[styles.alertFeedCard, { borderColor: color }]}>
+                                <View style={styles.alertFeedHeader}>
+                                    <View style={styles.categoryBadge}>
+                                        <Text style={styles.categoryBadgeText}>
+                                            {alert.category === 'weather' ? '⛈️ WEATHER' : alert.category === 'fire' ? '🔥 FIRE' : '🚧 TRAFFIC'}
+                                        </Text>
+                                    </View>
+                                    <View style={[styles.severityBadge, { backgroundColor: isCritical ? 'rgba(255, 59, 48, 0.15)' : 'rgba(255, 149, 0, 0.15)' }]}>
+                                        <Text style={[styles.severityBadgeText, { color }]}>
+                                            {alert.severity?.toUpperCase()}
+                                        </Text>
+                                    </View>
+                                </View>
+                                <Text style={styles.alertFeedTitle}>{alert.title}</Text>
+                                {alert.message && <Text style={styles.alertFeedDesc}>{alert.message}</Text>}
+                            </View>
+                        );
+                    })}
+                </View>
+            )}
 
             <TouchableOpacity
                 style={[styles.saveBtn, (saving || saved) && styles.saveBtnActive]}
@@ -189,15 +246,6 @@ export default function AlertsScreen() {
                 )}
             </TouchableOpacity>
         </ScrollView>
-    );
-}
-
-function AlertGroup({ title, count }: { title: string; count: number }) {
-    return (
-        <View style={styles.alertGroup}>
-            <Text style={styles.alertGroupTitle}>{title}</Text>
-            <Text style={styles.alertGroupCount}>{count}</Text>
-        </View>
     );
 }
 
@@ -235,7 +283,22 @@ const styles = StyleSheet.create({
     loadingCard: { backgroundColor: '#141D35', borderRadius: 16, padding: 18, marginBottom: 16, alignItems: 'center', borderWidth: 1, borderColor: '#1E2D50' },
     loadingText: { color: '#8892A4', marginTop: 10 },
     emptyAlerts: { color: '#8892A4', fontSize: 14 },
-    alertGroup: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#1E2D50' },
-    alertGroupTitle: { color: '#FFFFFF', fontWeight: '700' },
-    alertGroupCount: { color: '#3A86FF', fontWeight: '900' },
+    
+    // Live Alerts Stats Styling
+    statContainer: { flexDirection: 'row', gap: 12 },
+    statBadge: { flex: 1, padding: 14, borderRadius: 12, borderWidth: 1, alignItems: 'center', gap: 2 },
+    statNumber: { fontSize: 24, fontWeight: '900' },
+    statLabelText: { fontSize: 10, fontWeight: '700', color: '#8892A4' },
+
+    // Alert Feed Styling
+    feedCard: { backgroundColor: '#141D35', borderRadius: 16, padding: 18, marginBottom: 16, borderWidth: 1, borderColor: '#1E2D50', gap: 14 },
+    feedTitle: { fontSize: 11, fontWeight: '700', color: '#3A86FF', letterSpacing: 2, marginBottom: 4 },
+    alertFeedCard: { backgroundColor: 'rgba(7, 12, 30, 0.6)', borderWidth: 1, borderRadius: 14, padding: 14, gap: 10 },
+    alertFeedHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    categoryBadge: { backgroundColor: 'rgba(58, 134, 255, 0.12)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+    categoryBadgeText: { color: '#3A86FF', fontSize: 9, fontWeight: '800' },
+    severityBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+    severityBadgeText: { fontSize: 9, fontWeight: '800' },
+    alertFeedTitle: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
+    alertFeedDesc: { color: '#8892A4', fontSize: 11, lineHeight: 15 },
 });

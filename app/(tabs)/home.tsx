@@ -1,7 +1,7 @@
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import { signOut } from 'firebase/auth';
-import { collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, limit, onSnapshot, orderBy, query, updateDoc, where } from 'firebase/firestore';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
@@ -16,7 +16,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { auth, db, getPersonalizedFeedFn, triggerSOSFn } from '../../firebaseConfig';
+import { auth, db, getPersonalizedFeedFn, triggerSOSFn, submitPollVoteFn } from '../../firebaseConfig';
 
 type Report = {
     reportId: string;
@@ -274,6 +274,23 @@ function ReportCard({ item }: { item: Report }) {
     );
 }
 
+type Crisis = {
+    crisisId: string;
+    crisisType: string;
+    severity: 'low' | 'medium' | 'high' | 'critical';
+    credibilityScore: number;
+    explanation: string;
+    status: 'active' | 'resolved';
+    timestamp?: any;
+};
+
+type VerificationRequest = {
+    requestId: string;
+    crisisId: string;
+    description: string;
+    status: string;
+};
+
 // ── Main Screen ───────────────────────────────────────────────────────────────
 export default function HomeScreen() {
     const [reports, setReports]           = useState<Report[]>([]);
@@ -283,6 +300,126 @@ export default function HomeScreen() {
     const [activeAlerts, setActiveAlerts] = useState<OfficialAlert[]>([]);
     const [dismissed, setDismissed]       = useState<Set<string>>(new Set());
     const user = auth.currentUser;
+
+    // AI Agents Crises and Verification States
+    const [crises, setCrises] = useState<Crisis[]>([]);
+    const [expandedCrisisId, setExpandedCrisisId] = useState<string | null>(null);
+    const [activeVerification, setActiveVerification] = useState<VerificationRequest | null>(null);
+    const [votingLoading, setVotingLoading] = useState(false);
+
+    // Subscribe to Active Crises from Firestore
+    useEffect(() => {
+        const q = query(
+            collection(db, 'crises'),
+            where('status', '==', 'active')
+        );
+        const unsub = onSnapshot(q, (snap) => {
+            const fetchedCrises: Crisis[] = [];
+            snap.forEach((docSnap) => {
+                const data = docSnap.data();
+                fetchedCrises.push({
+                    crisisId: docSnap.id,
+                    crisisType: data.crisisType || '',
+                    severity: data.severity || 'medium',
+                    credibilityScore: Number(data.credibilityScore || 0),
+                    explanation: data.explanation || '',
+                    status: data.status || 'active',
+                    timestamp: data.timestamp,
+                });
+            });
+            setCrises(fetchedCrises);
+        }, (err) => {
+            console.log("Crises snapshot subscription error:", err);
+        });
+        return () => unsub();
+    }, []);
+
+    // Subscribe to Active Verification Requests from Firestore
+    useEffect(() => {
+        const q = query(
+            collection(db, 'verification_requests'),
+            where('status', 'in', ['active', 'awaiting_citizen_input'])
+        );
+        const unsub = onSnapshot(q, async (snap) => {
+            let activeReq: VerificationRequest | null = null;
+            const uid = user?.uid ?? '';
+            
+            for (const docSnap of snap.docs) {
+                const data = docSnap.data();
+                const reqId = docSnap.id;
+                
+                try {
+                    // Check if current user has already voted on this request's poll
+                    const pollDoc = await getDoc(doc(db, 'polls', reqId));
+                    if (pollDoc.exists()) {
+                        const pData = pollDoc.data();
+                        const yesVotes = pData.yesVotes || [];
+                        const noVotes = pData.noVotes || [];
+                        if (uid && (yesVotes.includes(uid) || noVotes.includes(uid))) {
+                            // Already voted, skip showing popup
+                            continue;
+                        }
+                    }
+                } catch (e) {
+                    console.log("Error checking verification request poll:", e);
+                }
+
+                activeReq = {
+                    requestId: reqId,
+                    crisisId: data.crisisId || '',
+                    description: data.description || '',
+                    status: data.status || 'active',
+                };
+                break;
+            }
+            setActiveVerification(activeReq);
+        }, (err) => {
+            console.log("Verification requests subscription error:", err);
+        });
+        return () => unsub();
+    }, [user]);
+
+    // Validation handler calling backend submitPollVote Cloud Function
+    const handleVote = async (vote: 'yes' | 'no') => {
+        if (!activeVerification) return;
+        setVotingLoading(true);
+        try {
+            const submitVote = submitPollVoteFn();
+            await submitVote({ pollId: activeVerification.requestId, vote });
+            Alert.alert(
+                '✅ Validation Recorded', 
+                'Thank you! Your direct input has been submitted to guide the AI responder dispatch pipeline.'
+            );
+            setActiveVerification(null);
+        } catch (err: any) {
+            console.log("Cloud function vote failed, attempting direct verification request fallback update:", err.message);
+            try {
+                // Direct Firestore fallback for legacy verification requests
+                const ref = doc(db, 'verification_requests', activeVerification.requestId);
+                const reqDoc = await getDoc(ref);
+                if (reqDoc.exists()) {
+                    const data = reqDoc.data();
+                    const field = vote === 'yes' ? 'yesVotes' : 'noVotes';
+                    const currentCount = Number(data[field] || 0);
+                    await updateDoc(ref, {
+                        [field]: currentCount + 1,
+                        status: 'resolved' // Mark it resolved so it dismisses cleanly
+                    });
+                    Alert.alert(
+                        '✅ Validation Recorded', 
+                        'Thank you! Your direct input has been recorded.'
+                    );
+                    setActiveVerification(null);
+                    return;
+                }
+            } catch (fallbackErr) {
+                console.log("Direct fallback also failed:", fallbackErr);
+            }
+            Alert.alert('Error', err.message || 'Could not register validation.');
+        } finally {
+            setVotingLoading(false);
+        }
+    };
 
     // Fetch user profile to enable official city-level alerts
     useEffect(() => {
@@ -397,6 +534,12 @@ export default function HomeScreen() {
                 <View style={styles.headerActions}>
                     <TouchableOpacity
                         style={styles.headerBtn}
+                        onPress={() => router.push('/polls')}
+                    >
+                        <Text style={styles.headerBtnIcon}>📊</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={styles.headerBtn}
                         onPress={() => router.push('/(tabs)/alerts')}
                     >
                         <Text style={styles.headerBtnIcon}>🔔</Text>
@@ -406,6 +549,22 @@ export default function HomeScreen() {
                     </TouchableOpacity>
                 </View>
             </View>
+
+            {/* Glowing Active Polls Quick Action Card Banner */}
+            <TouchableOpacity 
+                style={styles.pollsBannerCard} 
+                onPress={() => router.push('/polls')}
+                activeOpacity={0.85}
+            >
+                <View style={styles.pollsBannerContent}>
+                    <Text style={styles.pollsBannerEmoji}>📊</Text>
+                    <View style={{ flex: 1 }}>
+                        <Text style={styles.pollsBannerTitle}>Civic Decision Grid Active</Text>
+                        <Text style={styles.pollsBannerSubtitle}>Tap to verify local emergency reports & earn trust points!</Text>
+                    </View>
+                    <Text style={styles.pollsBannerArrow}>▶</Text>
+                </View>
+            </TouchableOpacity>
 
             {/* Official Alert Banners — slide in from top */}
             {visibleAlerts.map((alert) => (
@@ -417,6 +576,74 @@ export default function HomeScreen() {
                     }
                 />
             ))}
+
+            {/* Glowing Active Crises AI Transparency Cards */}
+            {crises.length > 0 && (
+                <View style={styles.crisesSection}>
+                    <Text style={styles.sectionTitle}>🧠 AI Suspected Crises In Effect</Text>
+                    {crises.map((item) => {
+                        const isExpanded = expandedCrisisId === item.crisisId;
+                        const isHigh = item.severity === 'high' || item.severity === 'critical';
+                        return (
+                            <View 
+                                key={item.crisisId} 
+                                style={[
+                                    styles.crisisCard, 
+                                    isHigh ? styles.crisisCardHigh : styles.crisisCardMedium
+                                ]}
+                            >
+                                <View style={styles.crisisHeader}>
+                                    <Text style={styles.crisisEmoji}>
+                                        {item.crisisType === 'fire' ? '🔥' : item.crisisType === 'weather' ? '⛈️' : '🚨'}
+                                    </Text>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.crisisTitle}>
+                                            Suspected {item.crisisType.toUpperCase()} Incident
+                                        </Text>
+                                        <Text style={[styles.crisisSeverity, { color: isHigh ? '#FF3B30' : '#FF9500' }]}>
+                                            Severity: {item.severity.toUpperCase()}
+                                        </Text>
+                                    </View>
+                                </View>
+                                
+                                <TouchableOpacity 
+                                    style={styles.insightsToggle}
+                                    activeOpacity={0.8}
+                                    onPress={() => setExpandedCrisisId(isExpanded ? null : item.crisisId)}
+                                >
+                                    <Text style={styles.insightsToggleText}>
+                                        {isExpanded ? '🧠 Hide AI Agent Reasoning ▲' : '🧠 View AI Agent Insights ▼'}
+                                    </Text>
+                                </TouchableOpacity>
+
+                                {isExpanded && (
+                                    <View style={styles.insightsBox}>
+                                        <View style={styles.confidenceRow}>
+                                            <Text style={styles.confidenceLabel}>AI Credibility Confidence:</Text>
+                                            <Text style={styles.confidenceVal}>{item.credibilityScore}%</Text>
+                                        </View>
+                                        <View style={styles.meterBg}>
+                                            <View 
+                                                style={[
+                                                    styles.meterFill, 
+                                                    { 
+                                                        width: `${item.credibilityScore}%`, 
+                                                        backgroundColor: item.credibilityScore >= 80 ? '#30D158' : '#FF9500' 
+                                                    }
+                                                ]} 
+                                            />
+                                        </View>
+                                        <Text style={styles.insightsExplanation}>
+                                            <Text style={{ fontWeight: '700', color: '#FFFFFF' }}>Reasoning: </Text>
+                                            {item.explanation}
+                                        </Text>
+                                    </View>
+                                )}
+                            </View>
+                        );
+                    })}
+                </View>
+            )}
 
             {/* Feed */}
             {loading ? (
@@ -449,8 +676,8 @@ export default function HomeScreen() {
                         <RefreshControl
                             refreshing={refreshing}
                             onRefresh={() => {
-                                setRefreshing(true);
-                                fetchFeed(true);
+                                  setRefreshing(true);
+                                  fetchFeed(true);
                             }}
                             tintColor="#3A86FF"
                         />
@@ -462,6 +689,52 @@ export default function HomeScreen() {
             <View style={styles.sosContainer}>
                 <SOSButton />
             </View>
+
+            {/* Real-time Verification Request Modal popup */}
+            {activeVerification && (
+                <Modal visible={!!activeVerification} transparent animationType="slide">
+                    <View style={styles.verifyOverlay}>
+                        <View style={styles.verifyCard}>
+                            <View style={styles.verifyHeader}>
+                                <Text style={styles.verifyIcon}>📢</Text>
+                                <Text style={styles.verifyHeaderTitle}>AI Community Validation</Text>
+                            </View>
+                            <Text style={styles.verifySubtitle}>
+                                Our AI system has detected a potential emergency in your immediate area:
+                            </Text>
+                            <View style={styles.verifyDetailsBox}>
+                                <Text style={styles.verifyDescription}>&quot;{activeVerification.description}&quot;</Text>
+                            </View>
+                            <Text style={styles.verifyQuestion}>Can you confirm if this is currently happening?</Text>
+                            
+                            {votingLoading ? (
+                                <ActivityIndicator size="large" color="#3A86FF" style={{ marginVertical: 20 }} />
+                            ) : (
+                                <View style={styles.verifyActions}>
+                                    <TouchableOpacity 
+                                        style={[styles.verifyBtn, styles.confirmBtn]}
+                                        onPress={() => handleVote('yes')}
+                                    >
+                                        <Text style={styles.verifyBtnText}>🟢 YES, I CONFIRM</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity 
+                                        style={[styles.verifyBtn, styles.rejectBtn]}
+                                        onPress={() => handleVote('no')}
+                                    >
+                                        <Text style={styles.verifyBtnText}>🔴 NO, FALSE ALERT</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity 
+                                        style={styles.closeVerifyBtn}
+                                        onPress={() => setActiveVerification(null)}
+                                    >
+                                        <Text style={styles.closeVerifyText}>Dismiss Request</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            )}
+                        </View>
+                    </View>
+                </Modal>
+            )}
         </View>
     );
 }
@@ -614,4 +887,236 @@ const styles = StyleSheet.create({
     modalConfirmText: { color: '#fff', fontWeight: '700', fontSize: 16 },
     modalCancelBtn:   { paddingVertical: 12, width: '100%', alignItems: 'center' },
     modalCancelText:  { color: '#8892A4', fontSize: 15 },
+
+    // Active Crises Styling
+    crisesSection: {
+        paddingHorizontal: 20,
+        marginTop: 15,
+        gap: 10,
+    },
+    sectionTitle: {
+        fontSize: 15,
+        fontWeight: '800',
+        color: '#FF9500',
+        letterSpacing: 0.5,
+    },
+    crisisCard: {
+        backgroundColor: '#141D35',
+        borderRadius: 16,
+        padding: 16,
+        borderWidth: 1,
+    },
+    crisisCardMedium: {
+        borderColor: 'rgba(255, 149, 0, 0.4)',
+        shadowColor: '#FF9500',
+        shadowOpacity: 0.1,
+        shadowRadius: 10,
+    },
+    crisisCardHigh: {
+        borderColor: 'rgba(255, 59, 48, 0.4)',
+        shadowColor: '#FF3B30',
+        shadowOpacity: 0.15,
+        shadowRadius: 10,
+    },
+    crisisHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    crisisEmoji: {
+        fontSize: 28,
+    },
+    crisisTitle: {
+        color: '#FFFFFF',
+        fontSize: 15,
+        fontWeight: '800',
+    },
+    crisisSeverity: {
+        fontSize: 12,
+        fontWeight: '600',
+        marginTop: 2,
+    },
+    insightsToggle: {
+        marginTop: 12,
+        backgroundColor: 'rgba(58, 134, 255, 0.15)',
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+        borderRadius: 8,
+        alignItems: 'center',
+    },
+    insightsToggleText: {
+        color: '#3A86FF',
+        fontSize: 12,
+        fontWeight: '700',
+    },
+    insightsBox: {
+        marginTop: 12,
+        paddingTop: 12,
+        borderTopWidth: 1,
+        borderTopColor: '#1E2D50',
+        gap: 8,
+    },
+    confidenceRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    confidenceLabel: {
+        color: '#8892A4',
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    confidenceVal: {
+        color: '#FFFFFF',
+        fontSize: 13,
+        fontWeight: '800',
+    },
+    meterBg: {
+        height: 6,
+        backgroundColor: '#1E2D50',
+        borderRadius: 3,
+        overflow: 'hidden',
+    },
+    meterFill: {
+        height: '100%',
+        borderRadius: 3,
+    },
+    insightsExplanation: {
+        color: '#8892A4',
+        fontSize: 13,
+        lineHeight: 18,
+        marginTop: 4,
+    },
+
+    // Verification Modal Styling
+    verifyOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(7, 12, 30, 0.85)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 24,
+    },
+    verifyCard: {
+        backgroundColor: '#141D35',
+        borderRadius: 24,
+        padding: 24,
+        width: '100%',
+        borderWidth: 1,
+        borderColor: '#3A86FF',
+        shadowColor: '#3A86FF',
+        shadowOpacity: 0.25,
+        shadowRadius: 20,
+        gap: 16,
+    },
+    verifyHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    verifyIcon: {
+        fontSize: 32,
+    },
+    verifyHeaderTitle: {
+        color: '#FFFFFF',
+        fontSize: 18,
+        fontWeight: '800',
+    },
+    verifySubtitle: {
+        color: '#8892A4',
+        fontSize: 13,
+        lineHeight: 18,
+    },
+    verifyDetailsBox: {
+        backgroundColor: '#0D1526',
+        borderRadius: 12,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: '#1E2D50',
+    },
+    verifyDescription: {
+        color: '#FECA57',
+        fontSize: 14,
+        fontWeight: '600',
+        fontStyle: 'italic',
+        lineHeight: 20,
+        textAlign: 'center',
+    },
+    verifyQuestion: {
+        color: '#FFFFFF',
+        fontSize: 14,
+        fontWeight: '700',
+        textAlign: 'center',
+    },
+    verifyActions: {
+        gap: 10,
+    },
+    verifyBtn: {
+        paddingVertical: 14,
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    confirmBtn: {
+        backgroundColor: 'rgba(48, 209, 88, 0.2)',
+        borderWidth: 1,
+        borderColor: '#30D158',
+    },
+    rejectBtn: {
+        backgroundColor: 'rgba(255, 59, 48, 0.2)',
+        borderWidth: 1,
+        borderColor: '#FF3B30',
+    },
+    verifyBtnText: {
+        color: '#FFFFFF',
+        fontSize: 14,
+        fontWeight: '800',
+        letterSpacing: 0.5,
+    },
+    closeVerifyBtn: {
+        paddingVertical: 10,
+        alignItems: 'center',
+    },
+    closeVerifyText: {
+        color: '#8892A4',
+        fontSize: 13,
+        fontWeight: '600',
+    },
+    pollsBannerCard: {
+        backgroundColor: '#141D35',
+        borderRadius: 16,
+        padding: 16,
+        marginHorizontal: 20,
+        marginBottom: 20,
+        borderWidth: 1,
+        borderColor: 'rgba(58, 134, 255, 0.3)',
+        shadowColor: '#3A86FF',
+        shadowOpacity: 0.15,
+        shadowRadius: 10,
+        shadowOffset: { width: 0, height: 4 },
+        elevation: 3,
+    },
+    pollsBannerContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 14,
+    },
+    pollsBannerEmoji: {
+        fontSize: 24,
+    },
+    pollsBannerTitle: {
+        fontSize: 14,
+        fontWeight: '800',
+        color: '#FFFFFF',
+        marginBottom: 2,
+    },
+    pollsBannerSubtitle: {
+        fontSize: 11,
+        color: '#8892A4',
+        lineHeight: 15,
+    },
+    pollsBannerArrow: {
+        fontSize: 12,
+        color: '#3A86FF',
+        fontWeight: 'bold',
+    },
 });

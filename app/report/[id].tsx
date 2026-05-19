@@ -85,7 +85,7 @@ export default function ReportDetailScreen() {
 
                 // Fetch associated poll (query polls where reportId == id)
                 // Using a known convention: poll doc may be at polls/<reportId>
-                const pollDoc = await getDoc(doc(db, 'polls', id));
+                const pollDoc = await getDoc(doc(db, 'polls', 'poll_' + id));
                 if (pollDoc.exists()) {
                     const pollData = { pollId: pollDoc.id, ...pollDoc.data() } as Poll;
                     setPoll(pollData);
