@@ -145,7 +145,7 @@ export default function MapTab() {
 
     // 1. Subscribe to active crises in Firestore
     useEffect(() => {
-        const q = query(collection(db, 'crises'), where('status', '==', 'active'));
+        const q = query(collection(db, 'crises'), where('status', 'in', ['active', 'executing']));
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const activeCrises: any[] = [];
             snapshot.forEach((docSnap) => {

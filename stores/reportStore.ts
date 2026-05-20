@@ -39,9 +39,9 @@ export const useReportStore = create<ReportStore>((set, get) => ({
     set((state) => ({
       draft: {
         ...state.draft,
-        imageUri: image.uri,
-        imageMimeType: image.mimeType,
-        imageName: image.fileName,
+        imageUri:      image.uri,
+        imageMimeType: image.mimeType ?? (image as any).type,
+        imageName:     image.fileName,
       },
       error: null,
     })),

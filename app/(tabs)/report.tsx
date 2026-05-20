@@ -1,11 +1,11 @@
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
+import { Image } from 'expo-image';
 import React, { useMemo, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
-    Image,
     KeyboardAvoidingView,
     Platform,
     ScrollView,
@@ -77,7 +77,7 @@ export default function ReportScreen() {
             const asset = result.assets[0];
             setImage({
                 uri: asset.uri,
-                mimeType: asset.mimeType,
+                mimeType: asset.type,             // expo-image-picker v17 uses .type for mime type
                 fileName: asset.fileName ?? `report-${Date.now()}.jpg`,
             });
         } catch (pickError: any) {

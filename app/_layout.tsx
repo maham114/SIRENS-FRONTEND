@@ -46,6 +46,12 @@ function RouteGuard() {
       return;
     }
 
+    // Allow users who are already inside a proper app/tab route — guard must not
+    // re-evaluate and push them back home during a tab transition (e.g. after
+    // returning from map-picker on the Report flow) where the query params have
+    // already been cleared by the navigation.
+    if (inAppRoute) return;
+
     if (inAuthRoute || inOnboardingRoute || atIndex) {
       router.replace('/(tabs)/home');
       return;

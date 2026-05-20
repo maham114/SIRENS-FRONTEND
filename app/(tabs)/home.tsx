@@ -274,16 +274,6 @@ function ReportCard({ item }: { item: Report }) {
     );
 }
 
-type Crisis = {
-    crisisId: string;
-    crisisType: string;
-    severity: 'low' | 'medium' | 'high' | 'critical';
-    credibilityScore: number;
-    explanation: string;
-    status: 'active' | 'resolved';
-    timestamp?: any;
-};
-
 type VerificationRequest = {
     requestId: string;
     crisisId: string;
@@ -301,38 +291,8 @@ export default function HomeScreen() {
     const [dismissed, setDismissed]       = useState<Set<string>>(new Set());
     const user = auth.currentUser;
 
-    // AI Agents Crises and Verification States
-    const [crises, setCrises] = useState<Crisis[]>([]);
-    const [expandedCrisisId, setExpandedCrisisId] = useState<string | null>(null);
     const [activeVerification, setActiveVerification] = useState<VerificationRequest | null>(null);
     const [votingLoading, setVotingLoading] = useState(false);
-
-    // Subscribe to Active Crises from Firestore
-    useEffect(() => {
-        const q = query(
-            collection(db, 'crises'),
-            where('status', '==', 'active')
-        );
-        const unsub = onSnapshot(q, (snap) => {
-            const fetchedCrises: Crisis[] = [];
-            snap.forEach((docSnap) => {
-                const data = docSnap.data();
-                fetchedCrises.push({
-                    crisisId: docSnap.id,
-                    crisisType: data.crisisType || '',
-                    severity: data.severity || 'medium',
-                    credibilityScore: Number(data.credibilityScore || 0),
-                    explanation: data.explanation || '',
-                    status: data.status || 'active',
-                    timestamp: data.timestamp,
-                });
-            });
-            setCrises(fetchedCrises);
-        }, (err) => {
-            console.log("Crises snapshot subscription error:", err);
-        });
-        return () => unsub();
-    }, []);
 
     // Subscribe to Active Verification Requests from Firestore
     useEffect(() => {
@@ -577,74 +537,6 @@ export default function HomeScreen() {
                 />
             ))}
 
-            {/* Glowing Active Crises AI Transparency Cards */}
-            {crises.length > 0 && (
-                <View style={styles.crisesSection}>
-                    <Text style={styles.sectionTitle}>🧠 AI Suspected Crises In Effect</Text>
-                    {crises.map((item) => {
-                        const isExpanded = expandedCrisisId === item.crisisId;
-                        const isHigh = item.severity === 'high' || item.severity === 'critical';
-                        return (
-                            <View 
-                                key={item.crisisId} 
-                                style={[
-                                    styles.crisisCard, 
-                                    isHigh ? styles.crisisCardHigh : styles.crisisCardMedium
-                                ]}
-                            >
-                                <View style={styles.crisisHeader}>
-                                    <Text style={styles.crisisEmoji}>
-                                        {item.crisisType === 'fire' ? '🔥' : item.crisisType === 'weather' ? '⛈️' : '🚨'}
-                                    </Text>
-                                    <View style={{ flex: 1 }}>
-                                        <Text style={styles.crisisTitle}>
-                                            Suspected {item.crisisType.toUpperCase()} Incident
-                                        </Text>
-                                        <Text style={[styles.crisisSeverity, { color: isHigh ? '#FF3B30' : '#FF9500' }]}>
-                                            Severity: {item.severity.toUpperCase()}
-                                        </Text>
-                                    </View>
-                                </View>
-                                
-                                <TouchableOpacity 
-                                    style={styles.insightsToggle}
-                                    activeOpacity={0.8}
-                                    onPress={() => setExpandedCrisisId(isExpanded ? null : item.crisisId)}
-                                >
-                                    <Text style={styles.insightsToggleText}>
-                                        {isExpanded ? '🧠 Hide AI Agent Reasoning ▲' : '🧠 View AI Agent Insights ▼'}
-                                    </Text>
-                                </TouchableOpacity>
-
-                                {isExpanded && (
-                                    <View style={styles.insightsBox}>
-                                        <View style={styles.confidenceRow}>
-                                            <Text style={styles.confidenceLabel}>AI Credibility Confidence:</Text>
-                                            <Text style={styles.confidenceVal}>{item.credibilityScore}%</Text>
-                                        </View>
-                                        <View style={styles.meterBg}>
-                                            <View 
-                                                style={[
-                                                    styles.meterFill, 
-                                                    { 
-                                                        width: `${item.credibilityScore}%`, 
-                                                        backgroundColor: item.credibilityScore >= 80 ? '#30D158' : '#FF9500' 
-                                                    }
-                                                ]} 
-                                            />
-                                        </View>
-                                        <Text style={styles.insightsExplanation}>
-                                            <Text style={{ fontWeight: '700', color: '#FFFFFF' }}>Reasoning: </Text>
-                                            {item.explanation}
-                                        </Text>
-                                    </View>
-                                )}
-                            </View>
-                        );
-                    })}
-                </View>
-            )}
-
             {/* Feed */}
             {loading ? (
                 <View style={styles.center}>
@@ -888,62 +780,6 @@ const styles = StyleSheet.create({
     modalCancelBtn:   { paddingVertical: 12, width: '100%', alignItems: 'center' },
     modalCancelText:  { color: '#8892A4', fontSize: 15 },
 
-    // Active Crises Styling
-    crisesSection: {
-        paddingHorizontal: 20,
-        marginTop: 15,
-        gap: 10,
-    },
-    sectionTitle: {
-        fontSize: 15,
-        fontWeight: '800',
-        color: '#FF9500',
-        letterSpacing: 0.5,
-    },
-    crisisCard: {
-        backgroundColor: '#141D35',
-        borderRadius: 16,
-        padding: 16,
-        borderWidth: 1,
-    },
-    crisisCardMedium: {
-        borderColor: 'rgba(255, 149, 0, 0.4)',
-        shadowColor: '#FF9500',
-        shadowOpacity: 0.1,
-        shadowRadius: 10,
-    },
-    crisisCardHigh: {
-        borderColor: 'rgba(255, 59, 48, 0.4)',
-        shadowColor: '#FF3B30',
-        shadowOpacity: 0.15,
-        shadowRadius: 10,
-    },
-    crisisHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-    },
-    crisisEmoji: {
-        fontSize: 28,
-    },
-    crisisTitle: {
-        color: '#FFFFFF',
-        fontSize: 15,
-        fontWeight: '800',
-    },
-    crisisSeverity: {
-        fontSize: 12,
-        fontWeight: '600',
-        marginTop: 2,
-    },
-    insightsToggle: {
-        marginTop: 12,
-        backgroundColor: 'rgba(58, 134, 255, 0.15)',
-        paddingVertical: 8,
-        paddingHorizontal: 12,
-        borderRadius: 8,
-        alignItems: 'center',
-    },
     insightsToggleText: {
         color: '#3A86FF',
         fontSize: 12,

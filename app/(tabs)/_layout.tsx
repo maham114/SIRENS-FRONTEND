@@ -56,6 +56,13 @@ export default function TabLayout() {
                     tabBarIcon: ({ focused }) => <TabIcon icon="👤" focused={focused} />,
                 }}
             />
+            <Tabs.Screen
+                name="ai-insights"
+                options={{
+                    title: 'AI Insights',
+                    tabBarIcon: ({ focused }) => <TabIcon icon="🧠" focused={focused} />,
+                }}
+            />
         </Tabs>
     );
 }

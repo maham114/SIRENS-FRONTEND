@@ -67,10 +67,14 @@ export default function MapPicker() {
         if (!selectedLocation || !parsedTarget) return;
         if (parsedTarget.kind === 'report') {
             useReportStore.getState().setField('coords', selectedLocation);
+            router.replace('/(tabs)/report');
         } else {
             setLocationCoords(parsedTarget, selectedLocation);
+            router.replace({
+                pathname: '/onboarding',
+                params: { mode: params.mode === 'edit' ? 'edit' : 'setup' },
+            });
         }
-        goBackToOnboarding();
     };
 
     const goBackToOnboarding = () => {
