@@ -1,6 +1,14 @@
 import type { OnboardingLocation, OnboardingRole } from '@/stores/onboardingStore';
 
-export const ALLOWED_ONBOARDING_ROLES: OnboardingRole[] = ['citizen'];
+export const ALLOWED_ONBOARDING_ROLES: OnboardingRole[] = [
+  'citizen',
+  'traffic_auth',
+  'flood_auth',
+  'heatwave_auth',
+  'power-outage_auth',
+  'accident_auth',
+  'fire_auth',
+];
 
 export function isAllowedRole(role: string): role is OnboardingRole {
   return ALLOWED_ONBOARDING_ROLES.includes(role as OnboardingRole);

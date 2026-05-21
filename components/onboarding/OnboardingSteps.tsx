@@ -6,6 +6,7 @@ import { LocationPickerField } from './LocationPickerField';
 import { StepFrame } from './StepFrame';
 import type {
   AlertPreferences,
+  AuthorityContact,
   OnboardingLocation,
   OnboardingRole,
 } from '@/stores/onboardingStore';
@@ -19,6 +20,7 @@ type StepProps = {
   frequentAreas: OnboardingLocation[];
   preferences: AlertPreferences;
   mode: 'setup' | 'edit';
+  authorityRoles?: AuthorityContact[];
   setRole: (role: OnboardingRole) => void;
   setCity: (city: string) => void;
   setDistrict: (district: string) => void;
@@ -30,11 +32,14 @@ type StepProps = {
   setPreferences: (preferences: AlertPreferences) => void;
 };
 
-export function RoleStep({ role, setRole }: Pick<StepProps, 'role' | 'setRole'>) {
+export function RoleStep({ role, setRole, authorityRoles }: Pick<StepProps, 'role' | 'setRole' | 'authorityRoles'>) {
+  const roles = authorityRoles ?? [];
+
   return (
     <StepFrame>
       <Text style={styles.stepTitle}>Select Your Role</Text>
       <Text style={styles.stepSubtitle}>How will you be using SIRENS?</Text>
+
       <TouchableOpacity
         style={[styles.roleCard, role === 'citizen' && styles.roleCardActive]}
         onPress={() => setRole('citizen')}
@@ -44,6 +49,27 @@ export function RoleStep({ role, setRole }: Pick<StepProps, 'role' | 'setRole'>)
           CITIZEN
         </Text>
       </TouchableOpacity>
+
+      <Text style={styles.sectionLabel}>Authority Roles</Text>
+      {roles.map((auth) => {
+        const roleKey = `${auth.crisisType}_auth` as OnboardingRole;
+        const isSelected = role === roleKey;
+        return (
+          <TouchableOpacity
+            key={auth.crisisType}
+            style={[styles.roleCard, styles.roleCardRow, isSelected && styles.roleCardActive]}
+            onPress={() => setRole(roleKey)}
+          >
+            <Ionicons name="shield" size={32} color={isSelected ? '#3A86FF' : '#6C7A9C'} />
+            <View style={{ flex: 1, marginLeft: 16 }}>
+              <Text style={[styles.roleText, isSelected && styles.roleTextActive]}>
+                {auth.name}
+              </Text>
+              <Text style={styles.roleSubtext}>{auth.crisisType} • {auth.contact}</Text>
+            </View>
+          </TouchableOpacity>
+        );
+      })}
     </StepFrame>
   );
 }
@@ -261,6 +287,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
   },
+  roleCardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   roleCardActive: {
     borderColor: '#3A86FF',
     backgroundColor: 'rgba(58, 134, 255, 0.1)',
@@ -273,6 +303,18 @@ const styles = StyleSheet.create({
   },
   roleTextActive: {
     color: '#3A86FF',
+  },
+  roleSubtext: {
+    color: '#8A9BAE',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  sectionLabel: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 8,
+    marginBottom: 12,
   },
   inputGroup: {
     marginBottom: 20,

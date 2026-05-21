@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -25,8 +25,9 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 import { auth } from '@/lib/firebase';
 import { saveOnboardingProfile } from '@/services/profileService';
+import { fetchAuthorities } from '@/services/authoritiesService';
 import { TOTAL_STEPS, useOnboardingStore } from '@/stores/onboardingStore';
-import type { AlertPreferences } from '@/stores/onboardingStore';
+import type { AlertPreferences, AuthorityContact } from '@/stores/onboardingStore';
 import { normalizeLocation, toBackendLocation } from '@/utils/onboardingLocation';
 import { validateOnboardingStep } from '@/utils/onboardingValidation';
 
@@ -34,6 +35,7 @@ export default function OnboardingScreen() {
     const { profile, refreshProfile } = useAuth();
     const { mode } = useLocalSearchParams<{ mode?: string }>();
     const progressWidth = useSharedValue(100 / TOTAL_STEPS);
+    const [authorityRoles, setAuthorityRoles] = useState<AuthorityContact[]>([]);
 
     const {
         role,
@@ -68,6 +70,10 @@ export default function OnboardingScreen() {
     useEffect(() => {
         setMode(mode === 'edit' ? 'edit' : 'setup');
     }, [mode, setMode]);
+
+    useEffect(() => {
+        fetchAuthorities().then(setAuthorityRoles).catch(() => {});
+    }, []);
 
     useEffect(() => {
         if (mode !== 'edit' || !profile) return;
@@ -273,6 +279,7 @@ function sanitizePayload(obj: any): any {
             frequentAreas,
             preferences,
             mode: storeMode,
+            authorityRoles,
             setRole,
             setCity,
             setDistrict,

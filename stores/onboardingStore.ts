@@ -2,7 +2,22 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
-export type OnboardingRole = 'citizen';
+export type OnboardingRole = 'citizen' | 'traffic_auth' | 'flood_auth' | 'heatwave_auth' | 'power-outage_auth' | 'accident_auth' | 'fire_auth';
+
+export type AuthorityContact = {
+  name: string;
+  contact: string;
+  crisisType: string;
+};
+
+export const AUTHORITY_ROLES: AuthorityContact[] = [
+  { name: 'Traffic Police', contact: 'traffic@police.gov.pk', crisisType: 'traffic' },
+  { name: 'NDMA', contact: 'ndma@gov.pk', crisisType: 'flood' },
+  { name: 'Health Department', contact: 'health@gov.pk', crisisType: 'heatwave' },
+  { name: 'LESCO/KESC', contact: '118', crisisType: 'power-outage' },
+  { name: 'Rescue 1122', contact: '1122', crisisType: 'accident' },
+  { name: 'Fire Brigade', contact: '16', crisisType: 'fire' },
+];
 
 export type Coordinates = {
   latitude: number;
